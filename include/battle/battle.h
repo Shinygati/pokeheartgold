@@ -439,7 +439,8 @@ typedef struct BattleContext {
     u8 unk_314C[4];
     int battlersOnField;
     u32 battleContinueFlag : 1;
-    u32 unused : 31;
+    u32 partyExpTextDone : 1; // "Your party gained N Exp. Points!" already shown for this exp award
+    u32 unused : 30;
 } BattleContext;
 
 typedef struct BattleSystem BattleSystem;

@@ -249,6 +249,10 @@ void sub_02053038(FieldSystem *fieldSystem, BOOL isConnection) {
     if (weather == 9 && SysFlagDefogCheck(varsFlags) == TRUE) {
         weather = 0;
     }
+    // Dark caves light up by themselves: Flash is always active, with no badge or move needed.
+    if (weather == 11) {
+        SysFlagFlashSet(varsFlags);
+    }
     if (weather == 11 && SysFlagFlashCheck(varsFlags) == TRUE) {
         weather = 12;
     }

@@ -3404,7 +3404,7 @@ BOOL ScrCmd_SafariZoneAction(ScriptContext *ctx) {
     case 0:
         Save_VarsFlags_SetSafariSysFlag(varsFlags);
         sub_0202F5F8(safariZone, areaSet);
-        *p_nSafariBall = 30;
+        *p_nSafariBall = 50;
         *p_nSafariSteps = 0;
         break;
     case 1:

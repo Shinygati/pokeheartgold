@@ -3746,7 +3746,7 @@ static int BattleInput_CursorMove_MainMenu(BattleInput *battleInput, int shouldI
     BattleMenuCursor *cursor;
     u32 key;
     const BattleMenuTemplate *menu;
-    int i, input, battlerId;
+    int input, battlerId;
     BattleCursorPosition *cursorPos;
 
     cursor = &battleInput->menuCursor;
@@ -3803,19 +3803,15 @@ static int BattleInput_CursorMove_MainMenu(BattleInput *battleInput, int shouldI
     case PAD_BUTTON_A:
         return sCursorArrayMainMenu[cursor->menuY][cursor->menuX];
     case PAD_BUTTON_B:
-        if (battleInput->unk66F == 1) {
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wtautological-constant-out-of-range-compare"
-#endif
-            for (i = 0; i < menu->touchscreenRect[i].rect.top != TOUCHSCREEN_RECTLIST_END; i++) {
-                if (BATTLE_INPUT_RUN == menu->touchInput[i]) {
-                    return i;
-                }
+        // Pressing B moves the cursor onto "Run" instead of selecting it.
+        if (battleInput->unk66F == 1 && battleInput->curMenuId != BATTLE_MENU_6 && battleInput->curMenuId != BATTLE_MENU_5) {
+            if (sCursorArrayMainMenu[cursor->menuY][cursor->menuX] != CURSOR_INPUT_RUN) {
+                cursor->menuX = 1;
+                cursor->menuY = 1;
+                PlaySE(SEQ_SE_DP_SELECT);
+                input = sCursorArrayMainMenu[cursor->menuY][cursor->menuX];
+                ov12_0226BB1C(battleInput->cursor, menu->touchscreenRect[input].rect.left + 8, menu->touchscreenRect[input].rect.right - 8, menu->touchscreenRect[input].rect.top + 8, menu->touchscreenRect[input].rect.bottom - 8, FX32_CONST(272));
             }
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
         }
         break;
     }

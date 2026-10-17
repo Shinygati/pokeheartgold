@@ -954,6 +954,25 @@
         "Pokémon holding a Soul Dew cannot be\n",
         "entered in the GS Cup.\r"
       ]
+    },
+    {
+      "id": "msg_0300_00192",
+      "en_US": "Edit EVS"
+    },
+    {
+      "id": "msg_0300_00193",
+      "en_US": [
+        "Up/Down: stat   Left/Right: +/-1\n",
+        "L/R: +/-10   A: save   B: cancel\r"
+      ]
+    },
+    {
+      "id": "msg_0300_00194",
+      "en_US": "TOTAL"
+    },
+    {
+      "id": "msg_0300_00195",
+      "en_US": "●"
     }
   ]
 }

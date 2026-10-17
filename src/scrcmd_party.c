@@ -1,4 +1,5 @@
 #include "constants/balls.h"
+#include "constants/moves.h"
 
 #include "field_system.h"
 #include "get_egg.h"
@@ -127,6 +128,23 @@ BOOL ScrCmd_MonHasMove(ScriptContext *ctx) {
     return FALSE;
 }
 
+// HM moves only need the badge (Headbutt needs nothing): the first Pokemon in the party that isn't an Egg is treated as knowing them.
+static BOOL IsBadgeOnlyFieldMove(u16 move) {
+    switch (move) {
+    case MOVE_CUT:
+    case MOVE_SURF:
+    case MOVE_STRENGTH:
+    case MOVE_ROCK_SMASH:
+    case MOVE_WATERFALL:
+    case MOVE_ROCK_CLIMB:
+    case MOVE_WHIRLPOOL:
+    case MOVE_HEADBUTT:
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
 BOOL ScrCmd_GetPartySlotWithMove(ScriptContext *ctx) {
     FieldSystem *fieldSystem = ctx->fieldSystem;
     u16 *slot = ScriptGetVarPointer(ctx);
@@ -138,6 +156,11 @@ BOOL ScrCmd_GetPartySlotWithMove(ScriptContext *ctx) {
         Pokemon *mon = Party_GetMonByIndex(SaveArray_Party_Get(fieldSystem->saveData), i);
         if (GetMonData(mon, MON_DATA_IS_EGG, NULL)) {
             continue;
+        }
+
+        if (IsBadgeOnlyFieldMove(move)) {
+            *slot = i;
+            break;
         }
 
         if (GetMonData(mon, MON_DATA_MOVE1, NULL) == move || GetMonData(mon, MON_DATA_MOVE2, NULL) == move || GetMonData(mon, MON_DATA_MOVE3, NULL) == move || GetMonData(mon, MON_DATA_MOVE4, NULL) == move) {

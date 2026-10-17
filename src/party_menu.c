@@ -400,6 +400,9 @@ static BOOL PartyMenuApp_Main(OverlayManager *manager, int *pState) {
             *pState = PARTY_MENU_STATE_FORM_CHANGE_ANIM;
         }
         break;
+    case PARTY_MENU_STATE_EDIT_EVS:
+        *pState = PartyMenu_Subtask_EditEVs(partyMenu);
+        break;
     case PARTY_MENU_STATE_BEGIN_EXIT:
         sub_020880CC(1, HEAP_ID_PARTY_MENU);
         *pState = PARTY_MENU_STATE_WAIT_EXIT_FADE_OUT;
@@ -1617,6 +1620,7 @@ static u8 sub_0207B0B0(PartyMenu *partyMenu, u8 *buf) {
     u8 i;
     u8 count = 0;
     u8 fieldEffect;
+    BOOL knowsFly = FALSE;
 
     buf[count] = PARTY_MON_CONTEXT_MENU_SUMMARY;
     ++count;
@@ -1637,6 +1641,9 @@ static u8 sub_0207B0B0(PartyMenu *partyMenu, u8 *buf) {
                 if (move == MOVE_NONE) {
                     break;
                 }
+                if (move == MOVE_FLY) {
+                    knowsFly = TRUE;
+                }
                 fieldEffect = MoveId_GetFieldEffectId(move);
                 if (fieldEffect != 0xFF) {
                     buf[count] = fieldEffect;
@@ -1644,6 +1651,24 @@ static u8 sub_0207B0B0(PartyMenu *partyMenu, u8 *buf) {
                     PartyMenu_ContextMenuAddFieldMove(partyMenu, move, fieldMoveIndex);
                     ++fieldMoveIndex;
                 }
+            }
+            // Flying-type Pokemon can use Fly without knowing it. The badge is checked when it is used.
+            if (!knowsFly && fieldMoveIndex < MAX_MON_MOVES
+                && (GetMonData(pokemon, MON_DATA_TYPE_1, NULL) == TYPE_FLYING || GetMonData(pokemon, MON_DATA_TYPE_2, NULL) == TYPE_FLYING)) {
+                buf[count] = MoveId_GetFieldEffectId(MOVE_FLY);
+                ++count;
+                PartyMenu_ContextMenuAddFieldMove(partyMenu, MOVE_FLY, fieldMoveIndex);
+                ++fieldMoveIndex;
+            }
+            // Custom "EVS" button, placed right after QUIT (index 4) so QUIT keeps its original
+            // bottom-right slot (index 3). The button list holds at most 8 entries, so it is only
+            // added when there is still room.
+            if (count < 8) {
+                for (i = count; i > 4; --i) {
+                    buf[i] = buf[i - 1];
+                }
+                buf[4] = PARTY_MON_CONTEXT_MENU_EVS;
+                ++count;
             }
         } else {
             buf[count] = PARTY_MON_CONTEXT_MENU_SWITCH;

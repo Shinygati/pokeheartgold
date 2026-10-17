@@ -43,6 +43,22 @@
 #define ENCOUNTER_CONTEXT_SAFARI      1
 #define ENCOUNTER_CONTEXT_BUG_CONTEST 2
 
+// Custom shiny odds. Every wild mon rolls once, up front, whether it is meant to be shiny (1 in WILD_SHINY_ODDS).
+// A shiny mon is then found by searching the RNG for a slot -> level -> nature -> PID chain that an unmodified
+// encounter could have rolled and that ends on a shiny PID (see searchShinyAttempt). A mon that is not meant to be
+// shiny re-rolls the whole attempt in the rare case its PID is shiny. IVs are only ever rolled for the accepted
+// attempt, so the mon still has an unbroken slot -> level -> nature -> PID -> IV RNG chain, like an unmodified one.
+#define WILD_SHINY_ODDS          4096
+#define WILD_SHINY_MAX_ATTEMPTS  120000
+#define WILD_SHINY_SEARCH_WINDOW 128     // RNG states searched behind each shiny PID for an encounter start
+#define WILD_SHINY_SEARCH_LIMIT  3000000 // RNG steps searched before giving up (about 8192 are needed on average, 50000 for Safari and Bug Contest, 400000 with Synchronize)
+
+enum {
+    WILD_SHINY_REQ_NONE,
+    WILD_SHINY_REQ_SHINY,
+    WILD_SHINY_REQ_NOT_SHINY,
+};
+
 FS_EXTERN_OVERLAY(bug_contest);
 
 typedef struct UnlockedUnown {
@@ -63,6 +79,33 @@ typedef struct EncounterGenState {
     u8 unownPuzzleFlags[ALPH_PUZZLE_MAX];
     Pokedex *pokedex;
 } EncounterGenState;
+
+enum {
+    WILD_ATTEMPT_REGULAR,
+    WILD_ATTEMPT_SAFARI,
+    WILD_ATTEMPT_BUG_CONTEST,
+    WILD_ATTEMPT_SINGLE,
+};
+
+enum {
+    WILD_ROLL_BLOCKED,     // suppressed (Repel, Keen Eye/Intimidate, Unown): an unmodified game makes no encounter
+    WILD_ROLL_PERSONALITY, // slot, level, nature and PID are rolled, IVs are not
+    WILD_ROLL_CUTE_CHARM,  // fixed-form PID, built by CreateMonWithGenderNatureLetter
+    WILD_ROLL_RETRY,       // Synchronize's roll missed: the encounter is rolled again from the slot roll
+};
+
+typedef struct WildAttempt {
+    u8 kind;
+    u8 encType;
+    int rodType;
+    FieldSystem *fieldSystem;
+    Pokemon *leadMon;
+    EncounterGenState *encounterGen;
+    EncounterSlot *encSlots;
+    u16 species;
+    u8 level;
+    u32 personality;
+} WildAttempt;
 
 static void EncSlotArray_Init_Land(const EncounterData *encData, EncounterSlot *encSlots);
 static void EncSlotArray_Update_NightFishing(const EncounterData *encData, u8 rodType, EncounterSlot *encSlots);
@@ -89,9 +132,12 @@ static u8 EncounterSlot_WildMonSlotRoll_Headbutt(void);
 static void ApplyLeadMonHeldItemEffectToEncounterRate(Pokemon *leadMon, u8 *pEncounterRate);
 static void ApplyFluteEffectToEncounterRate(FieldSystem *fieldSystem, u8 *pEncounterRate);
 static u8 getWildMonNature(Pokemon *pokemon, EncounterGenState *encounterGen);
+static BOOL rollWildNature(Pokemon *pokemon, EncounterGenState *encounterGen, u8 *nature);
 static u8 EncounterSlot_WildMonLevelRoll(EncounterSlot *encSlot, EncounterGenState *encounterGen);
 static void generateWildShinyAndAddToParty(u16 species, u8 level, int battler, u32 otid, EncounterGenState *encounterGen, Pokemon *leadMon, BattleSetup *battleSetup);
-static void generateWildNonShinyAndAddToParty(u16 species, u8 level, int battler, BOOL forceOnePerfectIV, EncounterGenState *encounterGen, Pokemon *leadMon, BattleSetup *battleSetup);
+static BOOL rollWildShiny(void);
+static u32 findWildPersonality(u8 nature);
+static BOOL wildPersonalityMeetsShinyRequirement(u32 otId, u32 personality, int shinyRequirement);
 static BOOL FieldSystem_GenerateRegularEncounter(Pokemon *leadMon, int rodType, EncounterGenState *encounterGen, EncounterSlot *encSlots, u8 encType, int battler, BattleSetup *battleSetup);
 static BOOL FieldSystem_GenerateSafariEncounter(FieldSystem *fieldSystem, Pokemon *leadMon, int rodType, EncounterGenState *encounterGen, u8 encType, int battler, BattleSetup *battleSetup);
 static BOOL FieldSystem_GenerateBugContestEncounter_Internal(FieldSystem *fieldSystem, Pokemon *leadMon, int rodType, EncounterGenState *encounterGen, u8 encType, int battler, BattleSetup *battleSetup);
@@ -739,6 +785,21 @@ static u8 getWildMonNature(Pokemon *pokemon, EncounterGenState *encounterGen) {
     }
 }
 
+// Synchronize always works: it still makes the game's 1 in 2 roll, but a miss throws the whole attempt away
+// (the caller rolls again from the slot roll) instead of falling back to a random nature. Every kept mon therefore
+// comes from a roll that a Synchronize hit in an unmodified game, so it stays legal.
+static BOOL rollWildNature(Pokemon *pokemon, EncounterGenState *encounterGen, u8 *nature) {
+    if (!encounterGen->isEgg && encounterGen->ability == ABILITY_SYNCHRONIZE) {
+        if (LCRandRange(2) != 0) {
+            return FALSE;
+        }
+        *nature = GetMonData(pokemon, MON_DATA_PERSONALITY, NULL) % 25;
+        return TRUE;
+    }
+    *nature = LCRandRange(25);
+    return TRUE;
+}
+
 static u8 EncounterSlot_WildMonLevelRoll(EncounterSlot *encSlot, EncounterGenState *encounterGen) {
     u8 hi;
     u8 lo;
@@ -819,67 +880,60 @@ static void generateWildShinyAndAddToParty(u16 species, u8 level, int battler, u
     Heap_Free(wildMon);
 }
 
-static void generateWildNonShinyAndAddToParty(u16 species, u8 level, int battler, BOOL forceOnePerfectIV, EncounterGenState *encounterGen, Pokemon *leadMon, BattleSetup *battleSetup) {
-    u8 monGender;
-    u8 canCoerceGender;
-    Pokemon *wildMon = AllocMonZeroed(HEAP_ID_FIELD2);
-    ZeroMonData(wildMon);
-
-    canCoerceGender = TRUE;
-    switch (GetMonBaseStat(species, BASE_GENDER_RATIO)) {
-    case MON_RATIO_MALE:
-    case MON_RATIO_FEMALE:
-    case MON_RATIO_UNKNOWN:
-        canCoerceGender = FALSE;
-    default:
-        break;
-    }
-
-    if (canCoerceGender && !encounterGen->isEgg && encounterGen->ability == ABILITY_CUTE_CHARM && LCRandRange(3) != 0) {
-        monGender = GetMonData(leadMon, MON_DATA_GENDER, NULL);
-        if (monGender == MON_FEMALE) {
-            monGender = MON_MALE;
-        } else if (monGender == MON_MALE) {
-            monGender = MON_FEMALE;
-        } else {
-            GF_ASSERT(FALSE); // can't put cute charm on a genderless pokemon
-        }
-        CreateMonWithGenderNatureLetter(wildMon, species, level, 0x20, monGender, getWildMonNature(leadMon, encounterGen), 0);
-        SetMonData(wildMon, MON_DATA_OT_ID, &encounterGen->playerId);
-        GF_ASSERT(addGeneratedMonToBattleSetupParty(battler, encounterGen, wildMon, battleSetup));
-        Heap_Free(wildMon);
-        return;
-    }
-
-    if (forceOnePerfectIV) {
-        int i;
-        BOOL success = FALSE;
-        for (i = 0; i < 4; ++i) {
-            CreateMonWithNature(wildMon, species, level, 0x20, getWildMonNature(leadMon, encounterGen));
-            for (int j = 0; j < 6; ++j) {
-                if (GetMonData(wildMon, MON_DATA_HP_IV + j, NULL) == 31) {
-                    success = TRUE;
-                    break;
-                }
-            }
-            if (success) {
-                break;
-            }
-        }
-    } else {
-        CreateMonWithNature(wildMon, species, level, 0x20, getWildMonNature(leadMon, encounterGen));
-    }
-
-    SetMonData(wildMon, MON_DATA_OT_ID, &encounterGen->playerId);
-    GF_ASSERT(addGeneratedMonToBattleSetupParty(battler, encounterGen, wildMon, battleSetup));
-    Heap_Free(wildMon);
+static BOOL rollWildShiny(void) {
+    return LCRandRange(WILD_SHINY_ODDS) == 0;
 }
 
-static BOOL FieldSystem_GenerateRegularEncounter(Pokemon *leadMon, int rodType, EncounterGenState *encounterGen, EncounterSlot *encSlots, u8 encType, int battler, BattleSetup *battleSetup) {
+static u32 findWildPersonality(u8 nature) {
+    u32 personality;
+
+    do {
+        u32 low = LCRandom();
+        u32 high = LCRandom();
+        personality = low | (high << 16);
+    } while (nature != GetNatureFromPersonality(personality));
+
+    return personality;
+}
+
+static BOOL wildPersonalityMeetsShinyRequirement(u32 otId, u32 personality, int shinyRequirement) {
+    BOOL isShiny = CalcShininessByOtIdAndPersonality(otId, personality) != 0;
+
+    if (shinyRequirement == WILD_SHINY_REQ_SHINY) {
+        return isShiny;
+    }
+    if (shinyRequirement == WILD_SHINY_REQ_NOT_SHINY) {
+        return !isShiny;
+    }
+    return TRUE;
+}
+
+// One step of the game's LCRNG (same constants as LCRandom in math_util.c).
+static u32 wildNextSeed(u32 seed) {
+    return seed * 1103515245 + 24691;
+}
+
+static void initWildAttempt(WildAttempt *attempt, u8 kind, FieldSystem *fieldSystem, Pokemon *leadMon, EncounterGenState *encounterGen, EncounterSlot *encSlots, u8 encType, int rodType, u16 species, u8 level) {
+    attempt->kind = kind;
+    attempt->encType = encType;
+    attempt->rodType = rodType;
+    attempt->fieldSystem = fieldSystem;
+    attempt->leadMon = leadMon;
+    attempt->encounterGen = encounterGen;
+    attempt->encSlots = encSlots;
+    attempt->species = species;
+    attempt->level = level;
+    attempt->personality = 0;
+}
+
+static BOOL rollRegularSlotAndLevel(WildAttempt *attempt) {
+    Pokemon *leadMon = attempt->leadMon;
+    EncounterGenState *encounterGen = attempt->encounterGen;
+    EncounterSlot *encSlots = attempt->encSlots;
     u8 slot = 0;
     u8 level = 0;
 
-    switch (encType) {
+    switch (attempt->encType) {
     case ENCOUNTER_TYPE_LAND:
         if (!EncounterSlot_AbilityInfluenceOnSlotChoiceCheck(leadMon, encounterGen, encSlots, NUM_ENCOUNTERS_LAND, TYPE_STEEL, ABILITY_MAGNET_PULL, &slot) && !EncounterSlot_AbilityInfluenceOnSlotChoiceCheck(leadMon, encounterGen, encSlots, NUM_ENCOUNTERS_LAND, TYPE_ELECTRIC, ABILITY_STATIC, &slot)) {
             slot = EncounterSlot_WildMonSlotRoll_Land();
@@ -901,7 +955,7 @@ static BOOL FieldSystem_GenerateRegularEncounter(Pokemon *leadMon, int rodType, 
         break;
     case ENCOUNTER_TYPE_FISHING:
         if (!EncounterSlot_AbilityInfluenceOnSlotChoiceCheck(leadMon, encounterGen, encSlots, NUM_ENCOUNTERS_FISH, TYPE_STEEL, ABILITY_MAGNET_PULL, &slot) && !EncounterSlot_AbilityInfluenceOnSlotChoiceCheck(leadMon, encounterGen, encSlots, NUM_ENCOUNTERS_FISH, TYPE_ELECTRIC, ABILITY_STATIC, &slot)) {
-            slot = EncounterSlot_WildMonSlotRoll_Fishing(rodType);
+            slot = EncounterSlot_WildMonSlotRoll_Fishing(attempt->rodType);
         }
         level = EncounterSlot_WildMonLevelRoll(&encSlots[slot], encounterGen);
         break;
@@ -924,15 +978,271 @@ static BOOL FieldSystem_GenerateRegularEncounter(Pokemon *leadMon, int rodType, 
     if (EncounterGen_DoesRepelSuppressEncounter(level, encounterGen) == TRUE) {
         return FALSE;
     }
-    generateWildNonShinyAndAddToParty(encSlots[slot].species, level, battler, FALSE, encounterGen, leadMon, battleSetup);
+
+    attempt->species = encSlots[slot].species;
+    attempt->level = level;
     return TRUE;
 }
 
+static BOOL rollSafariSlotAndLevel(WildAttempt *attempt) {
+    Pokemon *leadMon = attempt->leadMon;
+    EncounterGenState *encounterGen = attempt->encounterGen;
+    EncounterSlot *encSlots = attempt->encSlots;
+    u8 slot = 0;
+
+    BOOL encSlotModified = EncounterSlot_AbilityInfluenceOnSlotChoiceCheck(leadMon, encounterGen, encSlots, NUM_ENCOUNTERS_SAFARI, TYPE_STEEL, ABILITY_MAGNET_PULL, &slot);
+    if (!encSlotModified) {
+        encSlotModified = EncounterSlot_AbilityInfluenceOnSlotChoiceCheck(leadMon, encounterGen, encSlots, NUM_ENCOUNTERS_SAFARI, TYPE_ELECTRIC, ABILITY_STATIC, &slot);
+    }
+    if (!encSlotModified) {
+        slot = LCRandom() % NUM_ENCOUNTERS_SAFARI;
+    }
+    if (attempt->encType == ENCOUNTER_TYPE_LAND) {
+        slot = ApplyAbilityEffectToSlotLevel(encSlots, NUM_ENCOUNTERS_SAFARI, encounterGen, slot);
+    }
+
+    u8 level = encSlots[slot].maxLevel;
+    if (DoesAbilitySuppressEncounter(encounterGen, leadMon, level) || EncounterGen_DoesRepelSuppressEncounter(level, encounterGen) == TRUE) {
+        return FALSE;
+    }
+
+    attempt->species = encSlots[slot].species;
+    attempt->level = level;
+    return TRUE;
+}
+
+static BOOL rollBugContestSlotAndLevel(WildAttempt *attempt) {
+    EncounterSlot *encSlot = BugContest_GetEncounterSlot(FieldSystem_BugContest_Get(attempt->fieldSystem), HEAP_ID_FIELD1);
+    u16 species = encSlot->species;
+    u8 level = encSlot->maxLevel;
+    Heap_Free(encSlot);
+
+    if (EncounterGen_DoesRepelSuppressEncounter(level, attempt->encounterGen) == TRUE) {
+        return FALSE;
+    }
+
+    attempt->species = species;
+    attempt->level = level;
+    return TRUE;
+}
+
+// Everything an unmodified encounter rolls up to and including the PID. No IVs, and nothing is created, so an
+// attempt can be repeated from any RNG state. Cute Charm builds a fixed-form PID, so it ignores the shiny requirement.
+static int rollWildAttempt(WildAttempt *attempt) {
+    BOOL notSuppressed;
+    EncounterGenState *encounterGen = attempt->encounterGen;
+
+    switch (attempt->kind) {
+    case WILD_ATTEMPT_REGULAR:
+        notSuppressed = rollRegularSlotAndLevel(attempt);
+        break;
+    case WILD_ATTEMPT_SAFARI:
+        notSuppressed = rollSafariSlotAndLevel(attempt);
+        break;
+    case WILD_ATTEMPT_BUG_CONTEST:
+        notSuppressed = rollBugContestSlotAndLevel(attempt);
+        break;
+    default:
+        notSuppressed = TRUE; // WILD_ATTEMPT_SINGLE: species and level are fixed by the caller
+        break;
+    }
+    if (!notSuppressed) {
+        return WILD_ROLL_BLOCKED;
+    }
+
+    u8 canCoerceGender = TRUE;
+    switch (GetMonBaseStat(attempt->species, BASE_GENDER_RATIO)) {
+    case MON_RATIO_MALE:
+    case MON_RATIO_FEMALE:
+    case MON_RATIO_UNKNOWN:
+        canCoerceGender = FALSE;
+    default:
+        break;
+    }
+    if (canCoerceGender && !encounterGen->isEgg && encounterGen->ability == ABILITY_CUTE_CHARM && LCRandRange(3) != 0) {
+        return WILD_ROLL_CUTE_CHARM;
+    }
+
+    u8 nature;
+    if (!rollWildNature(attempt->leadMon, encounterGen, &nature)) {
+        return WILD_ROLL_RETRY;
+    }
+    attempt->personality = findWildPersonality(nature);
+    return WILD_ROLL_PERSONALITY;
+}
+
+// True if the two RNG outputs after seed (what CreateMon rolls for IVs) contain a 31.
+static BOOL wildIvRollHasPerfectIV(u32 seed) {
+    seed = wildNextSeed(seed);
+    u32 iv1 = seed >> 16;
+    seed = wildNextSeed(seed);
+    u32 iv2 = seed >> 16;
+
+    for (int i = 0; i < 3; ++i) {
+        if (((iv1 >> (5 * i)) & 31) == 31 || ((iv2 >> (5 * i)) & 31) == 31) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+// Finds an attempt whose PID is shiny without running attempts one after another (that took ~400,000 RNG calls).
+// Walk the RNG forward looking at every PID-sized pair of outputs; the PIDs that are shiny are rare, but checking
+// one is a single compare. For each shiny pair, look back through the last WILD_SHINY_SEARCH_WINDOW RNG states for
+// a state an unmodified encounter could have started from and that ends exactly on that pair (slot, level, nature,
+// then the PID loop stopping on it). Each candidate runs the real attempt code, so abilities, Repel and the like
+// are honoured, and the RNG is left exactly where an unmodified encounter would be after rolling the PID.
+static BOOL searchShinyAttempt(WildAttempt *attempt, BOOL forceOnePerfectIV) {
+    u32 history[WILD_SHINY_SEARCH_WINDOW]; // history[n % WINDOW] = RNG state before output n
+    u32 startSeed = GetLCRNGSeed();
+    u32 otId = attempt->encounterGen->playerId;
+    u32 seed0 = startSeed;
+    u32 seed1 = wildNextSeed(seed0);
+    u32 seed2 = wildNextSeed(seed1);
+
+    // Synchronize fixes the nature, so only PIDs of that nature can come out of an attempt.
+    BOOL synchronized = !attempt->encounterGen->isEgg && attempt->encounterGen->ability == ABILITY_SYNCHRONIZE;
+    u32 syncNature = synchronized ? GetMonData(attempt->leadMon, MON_DATA_PERSONALITY, NULL) % 25 : 0;
+
+    for (u32 n = 0; n < WILD_SHINY_SEARCH_LIMIT; ++n) {
+        history[n % WILD_SHINY_SEARCH_WINDOW] = seed0;
+
+        u32 personality = (seed1 >> 16) | (seed2 & 0xFFFF0000); // outputs n and n + 1, low half first
+        if (CalcShininessByOtIdAndPersonality(otId, personality) && (!synchronized || personality % 25 == syncNature)) {
+            u32 oldest = n + 1 > WILD_SHINY_SEARCH_WINDOW ? n + 1 - WILD_SHINY_SEARCH_WINDOW : 0;
+            for (u32 start = n; start-- > oldest;) {
+                SetLCRNGSeed(history[start % WILD_SHINY_SEARCH_WINDOW]);
+                if (rollWildAttempt(attempt) == WILD_ROLL_PERSONALITY && GetLCRNGSeed() == seed2) {
+                    if (!forceOnePerfectIV || wildIvRollHasPerfectIV(seed2)) {
+                        return TRUE;
+                    }
+                    // Safari and Bug Contest keep re-rolling until a 31 IV turns up, so a legal shiny needs one on its first try.
+                }
+            }
+        }
+
+        seed0 = seed1;
+        seed1 = seed2;
+        seed2 = wildNextSeed(seed2);
+    }
+
+    SetLCRNGSeed(startSeed);
+    return FALSE;
+}
+
+// Builds the mon from a finished roll. Returns FALSE, having generated nothing, if a later PID (31-IV retries)
+// does not satisfy shinyRequirement. The caller then re-rolls the whole encounter from the slot roll onwards.
+static BOOL addWildMonToParty(WildAttempt *attempt, int rollResult, int battler, BOOL forceOnePerfectIV, int shinyRequirement, BattleSetup *battleSetup) {
+    EncounterGenState *encounterGen = attempt->encounterGen;
+    Pokemon *leadMon = attempt->leadMon;
+    u16 species = attempt->species;
+    u8 level = attempt->level;
+    Pokemon *wildMon = AllocMonZeroed(HEAP_ID_FIELD2);
+    ZeroMonData(wildMon);
+
+    if (rollResult == WILD_ROLL_CUTE_CHARM) {
+        u8 monGender = GetMonData(leadMon, MON_DATA_GENDER, NULL);
+        if (monGender == MON_FEMALE) {
+            monGender = MON_MALE;
+        } else if (monGender == MON_MALE) {
+            monGender = MON_FEMALE;
+        } else {
+            GF_ASSERT(FALSE); // can't put cute charm on a genderless pokemon
+        }
+        CreateMonWithGenderNatureLetter(wildMon, species, level, 0x20, monGender, getWildMonNature(leadMon, encounterGen), 0);
+        SetMonData(wildMon, MON_DATA_OT_ID, &encounterGen->playerId);
+        GF_ASSERT(addGeneratedMonToBattleSetupParty(battler, encounterGen, wildMon, battleSetup));
+        Heap_Free(wildMon);
+        return TRUE;
+    }
+
+    // Each try is exactly what CreateMonWithNature does: nature roll, PID loop, then CreateMon rolls the IVs.
+    // The first try's nature and PID were rolled as part of the attempt.
+    u32 personality = attempt->personality;
+    if (forceOnePerfectIV) {
+        int i;
+        BOOL success = FALSE;
+        for (i = 0; i < 4; ++i) {
+            if (i != 0) {
+                u8 nature;
+                if (!rollWildNature(leadMon, encounterGen, &nature)) {
+                    Heap_Free(wildMon);
+                    return FALSE;
+                }
+                personality = findWildPersonality(nature);
+                if (!wildPersonalityMeetsShinyRequirement(encounterGen->playerId, personality, shinyRequirement)) {
+                    Heap_Free(wildMon);
+                    return FALSE;
+                }
+            }
+            CreateMon(wildMon, species, level, 0x20, TRUE, personality, OT_ID_PLAYER_ID, 0);
+            for (int j = 0; j < 6; ++j) {
+                if (GetMonData(wildMon, MON_DATA_HP_IV + j, NULL) == 31) {
+                    success = TRUE;
+                    break;
+                }
+            }
+            if (success) {
+                break;
+            }
+        }
+    } else {
+        CreateMon(wildMon, species, level, 0x20, TRUE, personality, OT_ID_PLAYER_ID, 0);
+    }
+
+    SetMonData(wildMon, MON_DATA_OT_ID, &encounterGen->playerId);
+    GF_ASSERT(addGeneratedMonToBattleSetupParty(battler, encounterGen, wildMon, battleSetup));
+    Heap_Free(wildMon);
+    return TRUE;
+}
+
+static BOOL generateWildEncounter(WildAttempt *attempt, BOOL forceOnePerfectIV, int battler, BattleSetup *battleSetup) {
+    EncounterGenState *encounterGen = attempt->encounterGen;
+
+    // Rolled once, before any slot/level/nature calls, so the accepted attempt's own RNG chain is untouched.
+    BOOL wantShiny = rollWildShiny();
+    int shinyRequirement = wantShiny ? WILD_SHINY_REQ_SHINY : WILD_SHINY_REQ_NOT_SHINY;
+
+    // With a Cute Charm lead most attempts end in the fixed-form PID, so the plain retry loop below is quick there.
+    if (wantShiny && !(encounterGen->ability == ABILITY_CUTE_CHARM && !encounterGen->isEgg)) {
+        if (searchShinyAttempt(attempt, forceOnePerfectIV)) {
+            return addWildMonToParty(attempt, WILD_ROLL_PERSONALITY, battler, forceOnePerfectIV, WILD_SHINY_REQ_SHINY, battleSetup);
+        }
+        shinyRequirement = WILD_SHINY_REQ_NONE; // nothing found in time, accept whatever comes
+    }
+
+    for (int tries = 0;; ++tries) {
+        if (tries >= WILD_SHINY_MAX_ATTEMPTS) {
+            shinyRequirement = WILD_SHINY_REQ_NONE; // safety valve, accept whatever comes
+        }
+
+        int rollResult = rollWildAttempt(attempt);
+        if (rollResult == WILD_ROLL_RETRY) {
+            continue;
+        }
+        if (rollResult == WILD_ROLL_BLOCKED) {
+            if (wantShiny && shinyRequirement != WILD_SHINY_REQ_NONE) {
+                continue; // keep searching for a shiny attempt that isn't blocked
+            }
+            return FALSE;
+        }
+        if (rollResult == WILD_ROLL_PERSONALITY && !wildPersonalityMeetsShinyRequirement(encounterGen->playerId, attempt->personality, shinyRequirement)) {
+            continue;
+        }
+        if (addWildMonToParty(attempt, rollResult, battler, forceOnePerfectIV, shinyRequirement, battleSetup)) {
+            return TRUE;
+        }
+    }
+}
+
+static BOOL FieldSystem_GenerateRegularEncounter(Pokemon *leadMon, int rodType, EncounterGenState *encounterGen, EncounterSlot *encSlots, u8 encType, int battler, BattleSetup *battleSetup) {
+    WildAttempt attempt;
+    initWildAttempt(&attempt, WILD_ATTEMPT_REGULAR, NULL, leadMon, encounterGen, encSlots, encType, rodType, 0, 0);
+    return generateWildEncounter(&attempt, FALSE, battler, battleSetup);
+}
+
 static BOOL FieldSystem_GenerateSafariEncounter(FieldSystem *fieldSystem, Pokemon *leadMon, int rodType, EncounterGenState *encounterGen, u8 encType, int battler, BattleSetup *battleSetup) {
-    u8 slot;
     SafariZoneAreaSet *areaSet = SafariZone_GetAreaSet(Save_SafariZone_Get(fieldSystem->saveData), 3);
-    u16 species;
-    u8 level;
     EncounterSlot *encSlots;
     int area = ov02_0224E340(fieldSystem);
     TimeOfDayWildParam timeOfDay = GF_RTC_GetTimeOfDayWildParam();
@@ -951,39 +1261,17 @@ static BOOL FieldSystem_GenerateSafariEncounter(FieldSystem *fieldSystem, Pokemo
         GF_ASSERT(FALSE);
     }
 
-    slot = 0;
-    BOOL encSlotModified = EncounterSlot_AbilityInfluenceOnSlotChoiceCheck(leadMon, encounterGen, encSlots, NUM_ENCOUNTERS_SAFARI, TYPE_STEEL, ABILITY_MAGNET_PULL, &slot);
-    if (!encSlotModified) {
-        encSlotModified = EncounterSlot_AbilityInfluenceOnSlotChoiceCheck(leadMon, encounterGen, encSlots, NUM_ENCOUNTERS_SAFARI, TYPE_ELECTRIC, ABILITY_STATIC, &slot);
-    }
-    if (!encSlotModified) {
-        slot = LCRandom() % NUM_ENCOUNTERS_SAFARI;
-    }
-    if (encType == ENCOUNTER_TYPE_LAND) {
-        slot = ApplyAbilityEffectToSlotLevel(encSlots, NUM_ENCOUNTERS_SAFARI, encounterGen, slot);
-    }
-    species = encSlots[slot].species;
-    level = encSlots[slot].maxLevel;
-    if (DoesAbilitySuppressEncounter(encounterGen, leadMon, level) || EncounterGen_DoesRepelSuppressEncounter(level, encounterGen) == TRUE) {
-        Heap_Free(encSlots);
-        return FALSE;
-    }
-
-    generateWildNonShinyAndAddToParty(species, level, battler, TRUE, encounterGen, leadMon, battleSetup);
+    WildAttempt attempt;
+    initWildAttempt(&attempt, WILD_ATTEMPT_SAFARI, fieldSystem, leadMon, encounterGen, encSlots, encType, rodType, 0, 0);
+    BOOL created = generateWildEncounter(&attempt, TRUE, battler, battleSetup);
     Heap_Free(encSlots);
-    return TRUE;
+    return created;
 }
 
 static BOOL FieldSystem_GenerateBugContestEncounter_Internal(FieldSystem *fieldSystem, Pokemon *leadMon, int rodType, EncounterGenState *encounterGen, u8 encType, int battler, BattleSetup *battleSetup) {
-    EncounterSlot *encSlot = BugContest_GetEncounterSlot(FieldSystem_BugContest_Get(fieldSystem), HEAP_ID_FIELD1);
-    if (EncounterGen_DoesRepelSuppressEncounter(encSlot->maxLevel, encounterGen) == TRUE) {
-        Heap_Free(encSlot);
-        return FALSE;
-    }
-
-    generateWildNonShinyAndAddToParty(encSlot->species, encSlot->maxLevel, battler, TRUE, encounterGen, leadMon, battleSetup);
-    Heap_Free(encSlot);
-    return TRUE;
+    WildAttempt attempt;
+    initWildAttempt(&attempt, WILD_ATTEMPT_BUG_CONTEST, fieldSystem, leadMon, encounterGen, NULL, encType, rodType, 0, 0);
+    return generateWildEncounter(&attempt, TRUE, battler, battleSetup);
 }
 
 void FieldSystem_GenerateSingleWildPokemon(FieldSystem *fieldSystem, u16 species, u8 level, BOOL shiny, BattleSetup *battleSetup) {
@@ -994,7 +1282,9 @@ void FieldSystem_GenerateSingleWildPokemon(FieldSystem *fieldSystem, u16 species
         u32 otid = PlayerProfile_GetTrainerID(Save_PlayerData_GetProfile(fieldSystem->saveData));
         generateWildShinyAndAddToParty(species, level, BATTLER_ENEMY, otid, &encounterGen, leadMon, battleSetup);
     } else {
-        generateWildNonShinyAndAddToParty(species, level, BATTLER_ENEMY, FALSE, &encounterGen, leadMon, battleSetup);
+        WildAttempt attempt;
+        initWildAttempt(&attempt, WILD_ATTEMPT_SINGLE, fieldSystem, leadMon, &encounterGen, NULL, 0, 0, species, level);
+        generateWildEncounter(&attempt, FALSE, BATTLER_ENEMY, battleSetup);
     }
 }
 

@@ -1232,7 +1232,6 @@ BOOL BtlCmd_CalcExpGain(BattleSystem *battleSystem, BattleContext *ctx) {
         int expMonsCnt = 0;
         int expShareMonsCnt = 0;
         u16 totalExp;
-        u16 itemNo;
         Pokemon *mon;
         for (int i = 0; i < Party_GetCount(BattleSystem_GetParty(battleSystem, 0)); i++) {
             mon = BattleSystem_GetPartyMon(battleSystem, 0, i);
@@ -1240,10 +1239,8 @@ BOOL BtlCmd_CalcExpGain(BattleSystem *battleSystem, BattleContext *ctx) {
                 if (ctx->unk_A4[(ctx->battlerIdFainted >> 1) & 1] & MaskOfFlagNo(i)) {
                     expMonsCnt++;
                 }
-                itemNo = GetMonData(mon, MON_DATA_HELD_ITEM, 0);
-                if (GetItemVar(ctx, itemNo, ITEM_VAR_HOLD_EFFECT) == HOLD_EFFECT_EXP_SHARE) {
-                    expShareMonsCnt++;
-                }
+                // Exp. Share is always active: every healthy party member counts
+                expShareMonsCnt++;
             }
         }
         totalExp = GetMonBaseStat(ctx->battleMons[ctx->battlerIdFainted].species, BASE_EXP_YIELD);
@@ -1285,6 +1282,8 @@ enum {
 
 BOOL BtlCmd_StartGetExpTask(BattleSystem *battleSystem, BattleContext *ctx) {
     BattleScriptIncrementPointer(ctx, 1);
+
+    ctx->partyExpTextDone = FALSE; // new exp award: allow the party message to show again
 
     ctx->getterWork = Heap_Alloc(HEAP_ID_BATTLE, sizeof(GetterWork));
 
@@ -6013,7 +6012,8 @@ static void Task_GetExp(SysTask *task, void *inData) {
         item = GetMonData(mon, MON_DATA_HELD_ITEM, NULL);
         itemEffect = GetItemAttr(item, ITEM_VAR_HOLD_EFFECT, HEAP_ID_BATTLE);
 
-        if (itemEffect == HOLD_EFFECT_EXP_SHARE || (data->ctx->unk_A4[side] & MaskOfFlagNo(slot))) {
+        // Exp. Share is always active, so any healthy mon is eligible
+        if ((GetMonData(mon, MON_DATA_SPECIES, NULL) && GetMonData(mon, MON_DATA_HP, NULL)) || (data->ctx->unk_A4[side] & MaskOfFlagNo(slot))) {
             break;
         }
     }
@@ -6052,9 +6052,8 @@ static void Task_GetExp(SysTask *task, void *inData) {
                 totalExp = data->ctx->gainedExp;
             }
 
-            if (itemEffect == HOLD_EFFECT_EXP_SHARE) {
-                totalExp += data->ctx->partyGainedExp;
-            }
+            // shared exp always applies (no Exp. Share item needed)
+            totalExp += data->ctx->partyGainedExp;
 
             if (itemEffect == HOLD_EFFECT_EXP_UP) {
                 totalExp = totalExp * 150 / 100;
@@ -6072,6 +6071,13 @@ static void Task_GetExp(SysTask *task, void *inData) {
                 }
                 // "{0} gained a boosted {1} Exp. Points!"
                 msg.id = msg_0197_00002;
+            }
+
+            // Custom exp multiplier: 1.2x by default, 2x once the Elite Four has been beaten
+            if (PlayerProfile_GetGameClearFlag(BattleSystem_GetPlayerProfile(data->battleSystem, 0))) {
+                totalExp *= 2;
+            } else {
+                totalExp = totalExp * 12 / 10;
             }
 
             u32 newExp = GetMonData(mon, MON_DATA_EXPERIENCE, NULL);
@@ -6094,7 +6100,19 @@ static void Task_GetExp(SysTask *task, void *inData) {
             msg.tag = TAG_NICKNAME_NUM;
             msg.param[0] = expBattler | (slot << 8);
             msg.param[1] = totalExp;
-            data->tempData[DATA_GET_EXP_PRINTER_ID] = BattleSystem_PrintBattleMessage(data->battleSystem, msgLoader, &msg, BattleSystem_GetTextFrameDelay(data->battleSystem));
+            if (slot == data->ctx->selectedMonIndex[expBattler] || !ov12_022568B0(data->battleSystem, mon)) {
+                // active battler, or a traded mon (boosted exp): own message
+                data->tempData[DATA_GET_EXP_PRINTER_ID] = BattleSystem_PrintBattleMessage(data->battleSystem, msgLoader, &msg, BattleSystem_GetTextFrameDelay(data->battleSystem));
+            } else if (!data->ctx->partyExpTextDone) {
+                // "Your party gained {1} Exp. Points!" - shown once per exp award
+                msg.id = msg_0197_01276;
+                data->tempData[DATA_GET_EXP_PRINTER_ID] = BattleSystem_PrintBattleMessage(data->battleSystem, msgLoader, &msg, BattleSystem_GetTextFrameDelay(data->battleSystem));
+                data->ctx->partyExpTextDone = TRUE;
+            } else {
+                // message already shown for the party: skip straight to the level-up check
+                data->state = STATE_GET_EXP_CHECK_LEVEL_UP;
+                break;
+            }
             data->tempData[DATA_GET_EXP_FRAME_COUNTER] = 7;
             data->state++;
         } else {
@@ -7309,6 +7327,9 @@ static u32 BattleSystem_CalculateBallShakes(BattleSystem *bsys, BattleContext *c
     if ((STATUS_BURN | STATUS_PARALYSIS | STATUS_BAD_POISON | STATUS_POISON) & status) {
         modifiedCatchRate = (modifiedCatchRate * 15) / 10;
     }
+
+    // Custom: triple the final catch rate for every ball, Pokémon and condition
+    modifiedCatchRate *= 3;
 
     s32 shakeCount;
     if (modifiedCatchRate >= 255) {

@@ -11,6 +11,13 @@
 
 #define MAX_ROAM_NEIGHBOR 6
 
+// Custom shiny odds for roamers, same idea as wild encounters: the roamer rolls once whether it is meant to be shiny
+// (1 in ROAMER_SHINY_ODDS), then the RNG is moved forward to a spot whose PID has that shininess. CreateMon then rolls
+// the PID and IVs from that spot exactly as it always does, so the roamer keeps an unbroken PID -> IV RNG chain and
+// stays legal. Shininess is judged against the player's full 32-bit trainer ID, which is what the roamer battles with.
+#define ROAMER_SHINY_ODDS         100
+#define ROAMER_SHINY_SEARCH_LIMIT 400000 // RNG steps searched before giving up (about 8192 are needed on average)
+
 struct RoamerAdjacency {
     u16 count;
     u16 neighbors[MAX_ROAM_NEIGHBOR];
@@ -20,6 +27,8 @@ static BOOL AreAnyRoamersActive(RoamerSaveData *roamer);
 static void RoamerLocationSetRandom(RoamerSaveData *roamer, u8 roamer_idx, u32 last_loc);
 static void RoamerLocationUpdateEx(RoamerSaveData *roamer, u8 roamer_idx, u32 last_loc);
 static void ApplyRoamerLocation(RoamerSaveData *roamer, u8 roamer_idx, u8 new_loc, u32 new_mapno);
+static u32 RoamerNextSeed(u32 seed);
+static void SeekRoamerPersonality(u32 otId, BOOL wantShiny);
 
 static const u32 sRoamerLocations[ROAMER_LOC_COUNT] = {
     // Johto
@@ -171,6 +180,30 @@ void UpdatePlayerLocationHistoryIfAnyRoamersActive(RoamerSaveData *roamers, u32 
     }
 }
 
+// One step of the game's LCRNG (same constants as LCRandom).
+static u32 RoamerNextSeed(u32 seed) {
+    return seed * 1103515245 + 24691;
+}
+
+// Moves the RNG to the first spot where the next two outputs (low half, then high half) make a PID whose shininess
+// matches wantShiny. Nothing is generated here, the RNG just ends up where an unmodified game could have been.
+static void SeekRoamerPersonality(u32 otId, BOOL wantShiny) {
+    u32 seed = GetLCRNGSeed();
+
+    for (u32 n = 0; n < ROAMER_SHINY_SEARCH_LIMIT; ++n) {
+        u32 seed1 = RoamerNextSeed(seed);
+        u32 seed2 = RoamerNextSeed(seed1);
+        u32 personality = (seed1 >> 16) | (seed2 & 0xFFFF0000);
+
+        if ((CalcShininessByOtIdAndPersonality(otId, personality) != 0) == wantShiny) {
+            break;
+        }
+        seed = seed1;
+    }
+
+    SetLCRNGSeed(seed);
+}
+
 void Save_CreateRoamerByID(SaveData *saveData, u8 idx) {
     PlayerProfile *profile;
     RoamerSaveData *roamerSave = Save_Roamers_Get(saveData);
@@ -207,6 +240,8 @@ void Save_CreateRoamerByID(SaveData *saveData, u8 idx) {
     profile = Save_PlayerData_GetProfile(saveData);
     mon = AllocMonZeroed((enum HeapID)4);
     ZeroMonData(mon);
+    BOOL wantShiny = LCRandRange(ROAMER_SHINY_ODDS) == 0;
+    SeekRoamerPersonality(PlayerProfile_GetTrainerID(profile), wantShiny);
     CreateMon(mon, species, level, 32, FALSE, 0, OT_ID_PRESET, PlayerProfile_GetTrainerID_VisibleHalf(profile));
     SetRoamerData(roamerStats, ROAMER_DATA_STATUS, 0);
     SetRoamerData(roamerStats, ROAMER_DATA_ACTIVE, TRUE);

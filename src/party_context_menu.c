@@ -458,6 +458,7 @@ void PartyMenu_SetContextMenuStaticStrings(PartyMenu *partyMenu) {
     ReadMsgDataIntoString(partyMenu->msgData, msg_0300_00137, partyMenu->contextMenuStrings[PARTY_MON_CONTEXT_MENU_CONTEST_ENTER]);
     ReadMsgDataIntoString(partyMenu->msgData, msg_0300_00149, partyMenu->contextMenuStrings[PARTY_MON_CONTEXT_MENU_SET]);
     ReadMsgDataIntoString(partyMenu->msgData, msg_0300_00186, partyMenu->contextMenuStrings[PARTY_MON_CONTEXT_MENU_CONFIRM]);
+    ReadMsgDataIntoString(partyMenu->msgData, msg_0300_00192, partyMenu->contextMenuStrings[PARTY_MON_CONTEXT_MENU_EVS]);
 }
 
 void PartyMenu_ContextMenuAddFieldMove(PartyMenu *partyMenu, u16 move, u8 index) {

@@ -8523,6 +8523,13 @@
         "{STRVAR_1 3, 0, 0} got ${STRVAR_1 54, 1, 0} for winning!\n",
         "Sent some to Mom!\r"
       ]
+    },
+    {
+      "id": "msg_0197_01276",
+      "en_US": [
+        "Your party gained\n",
+        "{STRVAR_1 54, 1, 0} Exp. Points!\r"
+      ]
     }
   ]
 }

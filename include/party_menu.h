@@ -63,6 +63,7 @@ typedef enum PartyMenuState {
     PARTY_MENU_STATE_FORM_CHANGE_ANIM,
     PARTY_MENU_STATE_BEGIN_EXIT,
     PARTY_MENU_STATE_WAIT_EXIT_FADE_OUT,
+    PARTY_MENU_STATE_EDIT_EVS,
 } PartyMenuState;
 
 typedef enum PartyMenuContext {
@@ -109,6 +110,7 @@ typedef enum PartyMonContextMenuItem {
     PARTY_MON_CONTEXT_MENU_CONTEST_ENTER,
     PARTY_MON_CONTEXT_MENU_SET,
     PARTY_MON_CONTEXT_MENU_CONFIRM,
+    PARTY_MON_CONTEXT_MENU_EVS,
     // field moves
     PARTY_MON_CONTEXT_MENU_CUT,
     PARTY_MON_CONTEXT_MENU_FLY,
@@ -418,7 +420,9 @@ struct PartyMenu {
     u8 filler_C8C[4];
     PartyMenuContextButtonAnimData contextMenuButtonAnim;
     u8 filler_CA0[0x8];
-}; // CA8
+    u16 evEditValues[6]; // working copy of the EVs being edited
+    u8 evEditSelection;  // selected stat row in the EV editor
+}; // CA8 + EV editor fields
 
 extern const OverlayManagerTemplate gOverlayTemplate_PartyMenu;
 
@@ -447,5 +451,7 @@ void PartyMenu_FormChangeScene_End(PartyMenu *partyMenu);
 void PartyMenu_DeleteContextMenuAndList(PartyMenu *partyMenu);
 void sub_0207CB3C(PartyMenu *partyMenu, MenuInputState menuInputState);
 void PartyMenu_FormChangeScene_Begin(PartyMenu *partyMenu);
+void PartyMenu_BeginEVEdit(PartyMenu *partyMenu);
+int PartyMenu_Subtask_EditEVs(PartyMenu *partyMenu);
 
 #endif // POKEHEARTGOLD_PARTY_MENU_H

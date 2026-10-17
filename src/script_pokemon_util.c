@@ -6,10 +6,46 @@
 #include "constants/items.h"
 
 #include "get_egg.h"
+#include "math_util.h"
 #include "party.h"
+#include "player_data.h"
 #include "pokemon_mood.h"
 #include "unk_0206979C.h"
 #include "update_dex_received.h"
+
+// Custom shiny odds for gift Pokemon, same idea as wild encounters: the gift rolls once whether it is meant to be shiny
+// (1 in GIFT_SHINY_ODDS), then the RNG is moved forward to a spot whose PID has that shininess. CreateMon then rolls
+// the PID and IVs from that spot exactly as it always does, so the gift keeps an unbroken PID -> IV RNG chain and
+// stays legal. Shininess is judged against the player's full 32-bit trainer ID.
+#define GIFT_SHINY_ODDS         4096
+#define GIFT_SHINY_SEARCH_LIMIT 400000 // RNG steps searched before giving up (about 8192 are needed on average)
+
+static u32 GiftNextSeed(u32 seed);
+static void SeekGiftPersonality(u32 otId, BOOL wantShiny);
+
+// One step of the game's LCRNG (same constants as LCRandom).
+static u32 GiftNextSeed(u32 seed) {
+    return seed * 1103515245 + 24691;
+}
+
+// Moves the RNG to the first spot where the next two outputs (low half, then high half) make a PID whose shininess
+// matches wantShiny. Nothing is generated here, the RNG just ends up where an unmodified game could have been.
+static void SeekGiftPersonality(u32 otId, BOOL wantShiny) {
+    u32 seed = GetLCRNGSeed();
+
+    for (u32 n = 0; n < GIFT_SHINY_SEARCH_LIMIT; ++n) {
+        u32 seed1 = GiftNextSeed(seed);
+        u32 seed2 = GiftNextSeed(seed1);
+        u32 personality = (seed1 >> 16) | (seed2 & 0xFFFF0000);
+
+        if ((CalcShininessByOtIdAndPersonality(otId, personality) != 0) == wantShiny) {
+            break;
+        }
+        seed = seed1;
+    }
+
+    SetLCRNGSeed(seed);
+}
 
 static BOOL MonNotFaintedOrEgg(Pokemon *mon) {
     if (GetMonData(mon, MON_DATA_HP, NULL) == 0) {
@@ -30,6 +66,8 @@ BOOL GiveMon(enum HeapID heapID, SaveData *saveData, int species, int level, int
     {
         mon = AllocMonZeroed(heapID);
         ZeroMonData(mon);
+        BOOL wantShiny = LCRandRange(GIFT_SHINY_ODDS) == 0;
+        SeekGiftPersonality(PlayerProfile_GetTrainerID(profile), wantShiny);
         CreateMon(mon, species, level, 32, FALSE, 0, 0, 0);
         sub_020720FC(mon, profile, ITEM_POKE_BALL, ball, encounterType, heapID);
         sp1C = heldItem;

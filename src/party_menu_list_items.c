@@ -6,10 +6,12 @@
 
 #include "bag.h"
 #include "field_move.h"
+#include "font.h"
 #include "mail_misc.h"
 #include "overlay_94.h"
 #include "party_context_menu.h"
 #include "party_menu_sprites.h"
+#include "system.h"
 #include "text.h"
 #include "unk_02005D10.h"
 
@@ -33,6 +35,7 @@ static void PartyMonContextMenuAction_Enter(PartyMenu *partyMenu, int *pState);
 static void PartyMonContextMenuAction_NoEntry(PartyMenu *partyMenu, int *pState);
 static void PartyMonContextMenuAction_ContestEnter(PartyMenu *partyMenu, int *pState);
 static void PartyMonContextMenuAction_Confirm(PartyMenu *partyMenu, int *pState);
+static void PartyMonContextMenuAction_EditEVs(PartyMenu *partyMenu, int *pState);
 static void PartyMonContextMenuAction_Summary(PartyMenu *partyMenu, int *pState);
 static void PartyMonContextMenuAction_Set(PartyMenu *partyMenu, int *pState);
 static void PartyMenuContextMenuAction_FieldMoveCommon(PartyMenu *partyMenu, int *pState);
@@ -71,6 +74,7 @@ static const u32 _02101CB8[] = {
     [PARTY_MON_CONTEXT_MENU_CONTEST_ENTER] = (u32)PartyMonContextMenuAction_ContestEnter,
     [PARTY_MON_CONTEXT_MENU_SET] = (u32)PartyMonContextMenuAction_Set,
     [PARTY_MON_CONTEXT_MENU_CONFIRM] = (u32)PartyMonContextMenuAction_Confirm,
+    [PARTY_MON_CONTEXT_MENU_EVS] = (u32)PartyMonContextMenuAction_EditEVs,
     [PARTY_MON_CONTEXT_MENU_CUT] = (u32)PartyMonContextMenuAction_Cut,
     [PARTY_MON_CONTEXT_MENU_FLY] = (u32)PartyMonContextMenuAction_Fly,
     [PARTY_MON_CONTEXT_MENU_SURF] = (u32)PartyMonContextMenuAction_Surf,
@@ -651,6 +655,191 @@ static void PartyMonContextMenuAction_Summary(PartyMenu *partyMenu, int *pState)
     PartyMenu_DeleteContextMenuAndList(partyMenu);
     PartyMenu_DisableMainScreenBlend_AfterYesNo();
     *pState = PARTY_MENU_STATE_BEGIN_EXIT;
+}
+
+// ---------------------------------------------------------------------------
+// Custom EV editor
+//
+// Opened from the "EVS" button of the party Pokemon menu. Shows the six EVs in the
+// (otherwise level-up only) stats window plus a TOTAL row.
+//   Up/Down: choose stat      Left/Right: -/+1      L/R: -/+10
+//   A: save and recalculate stats      B: cancel
+// ---------------------------------------------------------------------------
+
+#define EV_EDIT_MAX_PER_STAT 252
+#define EV_EDIT_MAX_TOTAL    510
+#define EV_EDIT_ROW_HEIGHT   16
+#define EV_EDIT_VALUE_RIGHT  104
+
+// Row order matches msg_0300_00169..00174 (MAX HP, ATTACK, DEFENSE, SP. ATK, SP. DEF, SPEED)
+static const u16 sEVEditMonData[NUM_STATS] = {
+    MON_DATA_HP_EV,
+    MON_DATA_ATK_EV,
+    MON_DATA_DEF_EV,
+    MON_DATA_SPATK_EV,
+    MON_DATA_SPDEF_EV,
+    MON_DATA_SPEED_EV,
+};
+
+static u32 PartyMenu_EVEdit_GetTotal(PartyMenu *partyMenu) {
+    u32 total = 0;
+    for (u8 i = 0; i < NUM_STATS; ++i) {
+        total += partyMenu->evEditValues[i];
+    }
+    return total;
+}
+
+static void PartyMenu_EVEdit_PrintValue(PartyMenu *partyMenu, u32 value, u32 y) {
+    Window *window = &partyMenu->levelUpStatsWindow[0];
+    String *fmt = NewString_ReadMsgData(partyMenu->msgData, msg_0300_00176);
+
+    BufferIntegerAsString(partyMenu->msgFormat, 0, value, 3, PRINTING_MODE_LEFT_ALIGN, TRUE);
+    StringExpandPlaceholders(partyMenu->msgFormat, partyMenu->formattedStrBuf, fmt);
+    String_Delete(fmt);
+    AddTextPrinterParameterized(window, 0, partyMenu->formattedStrBuf, EV_EDIT_VALUE_RIGHT - FontID_String_GetWidth(0, partyMenu->formattedStrBuf, 0), y, TEXT_SPEED_NOTRANSFER, NULL);
+}
+
+static void PartyMenu_EVEdit_Redraw(PartyMenu *partyMenu) {
+    Window *window = &partyMenu->levelUpStatsWindow[0];
+    String *str;
+
+    FillWindowPixelBuffer(window, 15);
+    for (u8 i = 0; i < NUM_STATS; ++i) {
+        u32 y = i * EV_EDIT_ROW_HEIGHT;
+
+        if (i == partyMenu->evEditSelection) {
+            str = NewString_ReadMsgData(partyMenu->msgData, msg_0300_00195); // selection marker
+            AddTextPrinterParameterized(window, 0, str, 0, y, TEXT_SPEED_NOTRANSFER, NULL);
+            String_Delete(str);
+        }
+        str = NewString_ReadMsgData(partyMenu->msgData, msg_0300_00169 + i); // stat name
+        AddTextPrinterParameterized(window, 0, str, 10, y, TEXT_SPEED_NOTRANSFER, NULL);
+        String_Delete(str);
+        PartyMenu_EVEdit_PrintValue(partyMenu, partyMenu->evEditValues[i], y);
+    }
+    str = NewString_ReadMsgData(partyMenu->msgData, msg_0300_00194); // TOTAL
+    AddTextPrinterParameterized(window, 0, str, 10, NUM_STATS * EV_EDIT_ROW_HEIGHT, TEXT_SPEED_NOTRANSFER, NULL);
+    String_Delete(str);
+    PartyMenu_EVEdit_PrintValue(partyMenu, PartyMenu_EVEdit_GetTotal(partyMenu), NUM_STATS * EV_EDIT_ROW_HEIGHT);
+    ScheduleWindowCopyToVram(window);
+}
+
+void PartyMenu_BeginEVEdit(PartyMenu *partyMenu) {
+    Pokemon *mon = Party_GetMonByIndex(partyMenu->args->party, partyMenu->partyMonIndex);
+
+    for (u8 i = 0; i < NUM_STATS; ++i) {
+        partyMenu->evEditValues[i] = GetMonData(mon, sEVEditMonData[i], NULL);
+    }
+    partyMenu->evEditSelection = 0;
+
+    AddWindowParameterized(partyMenu->bgConfig, &partyMenu->levelUpStatsWindow[0], GF_BG_LYR_MAIN_0, 1, 1, 14, 14, 0, 0x260);
+    DrawFrameAndWindow1(&partyMenu->levelUpStatsWindow[0], TRUE, 1, 14);
+    PartyMenu_EVEdit_Redraw(partyMenu);
+    PartyMenu_PrintMessageOnWindow34(partyMenu, msg_0300_00193, TRUE);
+}
+
+static int PartyMenu_EVEdit_Close(PartyMenu *partyMenu, BOOL save) {
+    if (save) {
+        u8 slot = partyMenu->partyMonIndex;
+        Pokemon *mon = Party_GetMonByIndex(partyMenu->args->party, slot);
+
+        for (u8 i = 0; i < NUM_STATS; ++i) {
+            u32 ev = partyMenu->evEditValues[i];
+            SetMonData(mon, sEVEditMonData[i], &ev);
+        }
+        CalcMonStats(mon);
+        sub_02079E38(partyMenu, slot);
+    }
+    ClearFrameAndWindow2(&partyMenu->windows[PARTY_MENU_WINDOW_ID_34], TRUE);
+    sub_0207E04C(partyMenu); // removes the stats window (this also blanks the BG tiles under it)
+
+    // The EV window covers the left-hand party panels on the same BG layer, so removing it
+    // wipes their tilemap entries. Redraw and re-place every panel's text windows.
+    for (u8 i = 0; i < PARTY_SIZE; ++i) {
+        if (partyMenu->monsDrawState[i].active) {
+            u8 base = i * PARTY_MENU_WINDOWS_PER_MON;
+
+            sub_0207D5DC(partyMenu, i);
+            PutWindowTilemap(&partyMenu->windows[base + PARTY_MENU_WINDOW_ID_MON1_NICKNAME]);
+            PutWindowTilemap(&partyMenu->windows[base + PARTY_MENU_WINDOW_ID_MON1_LEVEL]);
+            PutWindowTilemap(&partyMenu->windows[base + PARTY_MENU_WINDOW_ID_MON1_HPTEXT]);
+            PutWindowTilemap(&partyMenu->windows[base + PARTY_MENU_WINDOW_ID_MON1_HPBAR]);
+            PartyMenu_CommitPartyMonPanelWindowsToVram_InVBlank(partyMenu, i);
+        }
+    }
+    ScheduleBgTilemapBufferTransfer(partyMenu->bgConfig, GF_BG_LYR_MAIN_0);
+
+    PartyMenu_PrintMessageOnWindow32(partyMenu, msg_0300_00029, TRUE);
+    thunk_Sprite_SetPaletteOverride(partyMenu->sprites[PARTY_MENU_SPRITE_ID_CURSOR], 0);
+    PartyMenu_SetTopScreenSelectionPanelVisibility(partyMenu, FALSE);
+    return PARTY_MENU_STATE_1;
+}
+
+int PartyMenu_Subtask_EditEVs(PartyMenu *partyMenu) {
+    int delta = 0;
+    BOOL redraw = FALSE;
+
+    // ignore input while the help text is still being printed
+    if (TextPrinterCheckActive(partyMenu->textPrinterId)) {
+        return PARTY_MENU_STATE_EDIT_EVS;
+    }
+
+    if (gSystem.newAndRepeatedKeys & PAD_KEY_UP) {
+        partyMenu->evEditSelection = (partyMenu->evEditSelection + NUM_STATS - 1) % NUM_STATS;
+        redraw = TRUE;
+    } else if (gSystem.newAndRepeatedKeys & PAD_KEY_DOWN) {
+        partyMenu->evEditSelection = (partyMenu->evEditSelection + 1) % NUM_STATS;
+        redraw = TRUE;
+    } else if (gSystem.newAndRepeatedKeys & PAD_KEY_LEFT) {
+        delta = -1;
+    } else if (gSystem.newAndRepeatedKeys & PAD_KEY_RIGHT) {
+        delta = 1;
+    } else if (gSystem.newAndRepeatedKeys & PAD_BUTTON_L) {
+        delta = -10;
+    } else if (gSystem.newAndRepeatedKeys & PAD_BUTTON_R) {
+        delta = 10;
+    } else if (gSystem.newKeys & PAD_BUTTON_A) {
+        PlaySE(SEQ_SE_DP_SELECT);
+        return PartyMenu_EVEdit_Close(partyMenu, TRUE);
+    } else if (gSystem.newKeys & PAD_BUTTON_B) {
+        PlaySE(SEQ_SE_DP_SELECT);
+        return PartyMenu_EVEdit_Close(partyMenu, FALSE);
+    }
+
+    if (delta != 0) {
+        int current = partyMenu->evEditValues[partyMenu->evEditSelection];
+        int othersTotal = (int)PartyMenu_EVEdit_GetTotal(partyMenu) - current;
+        int limit = EV_EDIT_MAX_TOTAL - othersTotal;
+        int next = current + delta;
+
+        if (limit > EV_EDIT_MAX_PER_STAT) {
+            limit = EV_EDIT_MAX_PER_STAT;
+        }
+        if (next > limit) {
+            next = limit;
+        }
+        if (next < 0) {
+            next = 0;
+        }
+        if (next != current) {
+            partyMenu->evEditValues[partyMenu->evEditSelection] = next;
+            redraw = TRUE;
+        }
+    }
+
+    if (redraw) {
+        PlaySE(SEQ_SE_DP_SELECT);
+        PartyMenu_EVEdit_Redraw(partyMenu);
+    }
+    return PARTY_MENU_STATE_EDIT_EVS;
+}
+
+static void PartyMonContextMenuAction_EditEVs(PartyMenu *partyMenu, int *pState) {
+    ClearFrameAndWindow2(&partyMenu->windows[PARTY_MENU_WINDOW_ID_33], TRUE);
+    PartyMenu_DeleteContextMenuAndList(partyMenu);
+    PartyMenu_DisableMainScreenBlend_AfterYesNo();
+    PartyMenu_BeginEVEdit(partyMenu);
+    *pState = PARTY_MENU_STATE_EDIT_EVS;
 }
 
 static void PartyMonContextMenuAction_Set(PartyMenu *partyMenu, int *pState) {

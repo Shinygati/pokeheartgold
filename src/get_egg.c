@@ -593,21 +593,22 @@ void SetEggStats(Pokemon *mon, int species, u8 metLocation, PlayerProfile *profi
     MonSetTrainerMemo(mon, profile, trainerMemoStrat, eggLocation, HEAP_ID_DEFAULT);
 }
 
+
 static void SetBreedEggStats(Pokemon *mon, u16 species, Daycare *dayCare, u32 otId, u8 form) {
     u16 pokeball;
     u8 metLevel;
     u8 friendship = GetMonBaseStat(species, BASE_EGG_CYCLES);
     u32 pid = Save_Daycare_GetEggPID(dayCare);
-    if (Save_Daycare_MasudaCheck(dayCare)) {
-        if (!CalcShininessByOtIdAndPersonality(otId, pid)) {
-            for (int i = 0; i < 4; i++) {
-                pid = PRandom(pid);
-                if (CalcShininessByOtIdAndPersonality(otId, pid)) {
-                    break;
-                }
+
+    if (!CalcShininessByOtIdAndPersonality(otId, pid)) {
+        for (int i = 0; i < 16; i++) {
+            pid = PRandom(pid);
+            if (CalcShininessByOtIdAndPersonality(otId, pid)) {
+                break;
             }
         }
     }
+
     CreateMon(mon, species, 1, 32, TRUE, pid, OT_ID_PLAYER_ID, 0);
 
     metLevel = 0;
@@ -617,6 +618,7 @@ static void SetBreedEggStats(Pokemon *mon, u16 species, Daycare *dayCare, u32 ot
     SetMonData(mon, MON_DATA_FRIENDSHIP, &friendship);
     SetMonData(mon, MON_DATA_MET_LEVEL, &metLevel);
     SetMonData(mon, MON_DATA_FORM, &form);
+
     String *name = GetSpeciesName(SPECIES_EGG, HEAP_ID_FIELD1);
     SetMonData(mon, MON_DATA_NICKNAME_STRING, name);
     String_Delete(name);
