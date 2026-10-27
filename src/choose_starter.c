@@ -17,7 +17,7 @@
 // shiny (1 in STARTER_SHINY_ODDS), then the RNG is moved forward to a spot whose PID has that shininess. CreateMon
 // then rolls the PID and IVs from that spot exactly as it always does, so the starter keeps an unbroken PID -> IV
 // RNG chain and stays legal. Shininess is judged against the player's full 32-bit trainer ID.
-#define STARTER_SHINY_ODDS         4096
+#define STARTER_SHINY_ODDS         256
 #define STARTER_SHINY_SEARCH_LIMIT 400000 // RNG steps searched before giving up (about 8192 are needed on average)
 
 struct ChooseStarterTaskData {

@@ -17,7 +17,7 @@
 // (1 in GIFT_SHINY_ODDS), then the RNG is moved forward to a spot whose PID has that shininess. CreateMon then rolls
 // the PID and IVs from that spot exactly as it always does, so the gift keeps an unbroken PID -> IV RNG chain and
 // stays legal. Shininess is judged against the player's full 32-bit trainer ID.
-#define GIFT_SHINY_ODDS         4096
+#define GIFT_SHINY_ODDS         512
 #define GIFT_SHINY_SEARCH_LIMIT 400000 // RNG steps searched before giving up (about 8192 are needed on average)
 
 static u32 GiftNextSeed(u32 seed);

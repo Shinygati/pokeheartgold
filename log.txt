@@ -1,0 +1,89 @@
+[1mdiff --git a/src/field/encounter_check.c b/src/field/encounter_check.c[m
+[1mindex 9585cfd83..6b3d5515a 100644[m
+[1m--- a/src/field/encounter_check.c[m
+[1m+++ b/src/field/encounter_check.c[m
+[36m@@ -90,7 +90,7 @@[m [mstatic void ApplyLeadMonHeldItemEffectToEncounterRate(Pokemon *leadMon, u8 *pEnc[m
+ static void ApplyFluteEffectToEncounterRate(FieldSystem *fieldSystem, u8 *pEncounterRate);[m
+ static u8 getWildMonNature(Pokemon *pokemon, EncounterGenState *encounterGen);[m
+ static u8 EncounterSlot_WildMonLevelRoll(EncounterSlot *encSlot, EncounterGenState *encounterGen);[m
+[31m-static void generateWildShinyAndAddToParty(u16 species, u8 level, int battler, u32 otid, EncounterGenState *encounterGen, Pokemon *leadMon, BattleSetup *battleSetup);[m
+[32m+[m[32mstatic void generateWildShinyAndAddToParty(u16 species, u8 level, int battler, u32 otid, BOOL forceOnePerfectIV, EncounterGenState *encounterGen, Pokemon *leadMon, BattleSetup *battleSetup);[m
+ static void generateWildNonShinyAndAddToParty(u16 species, u8 level, int battler, BOOL forceOnePerfectIV, EncounterGenState *encounterGen, Pokemon *leadMon, BattleSetup *battleSetup);[m
+ static BOOL FieldSystem_GenerateRegularEncounter(Pokemon *leadMon, int rodType, EncounterGenState *encounterGen, EncounterSlot *encSlots, u8 encType, int battler, BattleSetup *battleSetup);[m
+ static BOOL FieldSystem_GenerateSafariEncounter(FieldSystem *fieldSystem, Pokemon *leadMon, int rodType, EncounterGenState *encounterGen, u8 encType, int battler, BattleSetup *battleSetup);[m
+[36m@@ -763,12 +763,15 @@[m [mstatic u8 EncounterSlot_WildMonLevelRoll(EncounterSlot *encSlot, EncounterGenSta[m
+     return lo + lvl;[m
+ }[m
+ [m
+[31m-static void generateWildShinyAndAddToParty(u16 species, u8 level, int battler, u32 otid, EncounterGenState *encounterGen, Pokemon *leadMon, BattleSetup *battleSetup) {[m
+[32m+[m[32mstatic void generateWildShinyAndAddToParty(u16 species, u8 level, int battler, u32 otid, BOOL forceOnePerfectIV, EncounterGenState *encounterGen, Pokemon *leadMon, BattleSetup *battleSetup) {[m
+     u8 monGender;[m
+     u8 monNature;[m
+     Pokemon *wildMon = AllocMonZeroed(HEAP_ID_FIELD2);[m
+     BOOL overrideGenderOrNature;[m
+     u32 personality;[m
+[32m+[m	[32mint attempt;[m
+[32m+[m	[32mint i;[m
+[32m+[m	[32mBOOL success;[m
+ [m
+     ZeroMonData(wildMon);[m
+ [m
+[36m@@ -814,7 +817,26 @@[m [mstatic void generateWildShinyAndAddToParty(u16 species, u8 level, int battler, u[m
+         } while (TRUE);[m
+     }[m
+ [m
+[31m-    CreateMon(wildMon, species, level, 0x20, TRUE, personality, OT_ID_PRESET, encounterGen->playerId);[m
+[32m+[m[32m    for (attempt = 0; attempt < (forceOnePerfectIV ? 4 : 1); attempt++) {[m
+[32m+[m[32m        CreateMon(wildMon, species, level, 0x20, TRUE, personality, OT_ID_PRESET, encounterGen->playerId);[m
+[32m+[m
+[32m+[m[32m        if (!forceOnePerfectIV) {[m
+[32m+[m[32m            break;[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        success = FALSE;[m
+[32m+[m[32m        for (i = 0; i < 6; i++) {[m
+[32m+[m[32m            if (GetMonData(wildMon, MON_DATA_HP_IV + i, NULL) == 31) {[m
+[32m+[m[32m                success = TRUE;[m
+[32m+[m[32m                break;[m
+[32m+[m[32m            }[m
+[32m+[m[32m        }[m
+[32m+[m
+[32m+[m[32m        if (success) {[m
+[32m+[m[32m            break;[m
+[32m+[m[32m        }[m
+[32m+[m[32m    }[m
+[32m+[m
+     GF_ASSERT(addGeneratedMonToBattleSetupParty(battler, encounterGen, wildMon, battleSetup));[m
+     Heap_Free(wildMon);[m
+ }[m
+[36m@@ -822,7 +844,20 @@[m [mstatic void generateWildShinyAndAddToParty(u16 species, u8 level, int battler, u[m
+ static void generateWildNonShinyAndAddToParty(u16 species, u8 level, int battler, BOOL forceOnePerfectIV, EncounterGenState *encounterGen, Pokemon *leadMon, BattleSetup *battleSetup) {[m
+     u8 monGender;[m
+     u8 canCoerceGender;[m
+[31m-    Pokemon *wildMon = AllocMonZeroed(HEAP_ID_FIELD2);[m
+[32m+[m	[32mPokemon *wildMon;[m
+[32m+[m	[32mBOOL forceShiny;[m
+[32m+[m	[32mu32 otid;[m
+[32m+[m[41m	[m
+[32m+[m	[32mforceShiny = (LCRandom() % 1 == 0);[m
+[32m+[m[41m	[m
+[32m+[m	[32mif (forceShiny) {[m
+[32m+[m		[32motid = encounterGen->playerId;[m
+[32m+[m		[32mgenerateWildShinyAndAddToParty(species, level, battler, otid, forceOnePerfectIV, encounterGen, leadMon, battleSetup);[m
+[32m+[m		[32mreturn;[m
+[32m+[m	[32m}[m
+[32m+[m[41m	[m
+[32m+[m	[32mwildMon = AllocMonZeroed(HEAP_ID_FIELD2);[m
+[32m+[m[41m	[m
+     ZeroMonData(wildMon);[m
+ [m
+     canCoerceGender = TRUE;[m
+[36m@@ -992,7 +1027,7 @@[m [mvoid FieldSystem_GenerateSingleWildPokemon(FieldSystem *fieldSystem, u16 species[m
+     EncounterGenState_Init(fieldSystem, leadMon, NULL, &encounterGen);[m
+     if (shiny) {[m
+         u32 otid = PlayerProfile_GetTrainerID(Save_PlayerData_GetProfile(fieldSystem->saveData));[m
+[31m-        generateWildShinyAndAddToParty(species, level, BATTLER_ENEMY, otid, &encounterGen, leadMon, battleSetup);[m
+[32m+[m[32m        generateWildShinyAndAddToParty(species, level, BATTLER_ENEMY, otid, FALSE, &encounterGen, leadMon, battleSetup);[m
+     } else {[m
+         generateWildNonShinyAndAddToParty(species, level, BATTLER_ENEMY, FALSE, &encounterGen, leadMon, battleSetup);[m
+     }[m

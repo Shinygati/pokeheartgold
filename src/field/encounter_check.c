@@ -48,7 +48,7 @@
 // encounter could have rolled and that ends on a shiny PID (see searchShinyAttempt). A mon that is not meant to be
 // shiny re-rolls the whole attempt in the rare case its PID is shiny. IVs are only ever rolled for the accepted
 // attempt, so the mon still has an unbroken slot -> level -> nature -> PID -> IV RNG chain, like an unmodified one.
-#define WILD_SHINY_ODDS          4096
+#define WILD_SHINY_ODDS          256
 #define WILD_SHINY_MAX_ATTEMPTS  120000
 #define WILD_SHINY_SEARCH_WINDOW 128     // RNG states searched behind each shiny PID for an encounter start
 #define WILD_SHINY_SEARCH_LIMIT  3000000 // RNG steps searched before giving up (about 8192 are needed on average, 50000 for Safari and Bug Contest, 400000 with Synchronize)
