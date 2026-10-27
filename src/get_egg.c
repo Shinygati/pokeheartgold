@@ -12,6 +12,7 @@
 #include "game_stats.h"
 #include "gf_gfx_loader.h"
 #include "item.h"
+#include "legal_shiny.h"
 #include "map_section.h"
 #include "math_util.h"
 #include "msgdata.h"
@@ -564,7 +565,8 @@ void SetEggStats(Pokemon *mon, int species, u8 metLocation, PlayerProfile *profi
     u8 isEgg;
 
     u8 friendship = GetMonBaseStat(species, BASE_EGG_CYCLES);
-    CreateMon(mon, species, 1, 32, FALSE, 0, OT_ID_PLAYER_ID, 0);
+    // Gift eggs are Method 1 in PKHeX: 1/SHINY_ODDS_GIFT, 2x31 IVs when shiny.
+    CreateMonWithLegalShinyOdds(mon, species, 1, OT_ID_PLAYER_ID, 0, PlayerProfile_GetTrainerID(profile), SHINY_ODDS_GIFT, LEGAL_SHINY_NATURE_ANY);
 
     metLevel = 0;
     pokeball = BALL_POKE;
@@ -594,20 +596,36 @@ void SetEggStats(Pokemon *mon, int species, u8 metLocation, PlayerProfile *profi
 }
 
 
+// Shiny eggs get at least two perfect IVs, like shiny encounters. Egg IVs aren't RNG-correlated.
+static void GiveShinyEggPerfectIVs(Pokemon *mon) {
+    u8 perfect = 31;
+    int count = 0;
+    int i;
+
+    for (i = 0; i < NUM_STATS; i++) {
+        if (GetMonData(mon, MON_DATA_HP_IV + i, NULL) == 31) {
+            count++;
+        }
+    }
+    while (count < 2) {
+        i = LCRandom() % NUM_STATS;
+        if (GetMonData(mon, MON_DATA_HP_IV + i, NULL) != 31) {
+            SetMonData(mon, MON_DATA_HP_IV + i, &perfect);
+            count++;
+        }
+    }
+}
+
 static void SetBreedEggStats(Pokemon *mon, u16 species, Daycare *dayCare, u32 otId, u8 form) {
     u16 pokeball;
     u8 metLevel;
     u8 friendship = GetMonBaseStat(species, BASE_EGG_CYCLES);
     u32 pid = Save_Daycare_GetEggPID(dayCare);
 
-    if (!CalcShininessByOtIdAndPersonality(otId, pid)) {
-        for (int i = 0; i < 16; i++) {
-            pid = PRandom(pid);
-            if (CalcShininessByOtIdAndPersonality(otId, pid)) {
-                break;
-            }
-        }
-    }
+    // Flat 1/SHINY_ODDS_EGG, regardless of the parents' languages (no Masuda bonus, no natural 1/8192 on
+    // top). Gen 4 eggs have no PID/IV correlation, so the PID is adjusted in place while keeping its nature
+    // (Everstone), gender, ability and the Nidoran/Volbeat gender bit.
+    pid = LegalShiny_AdjustEggPersonality(pid, otId, LegalShiny_Roll(SHINY_ODDS_EGG));
 
     CreateMon(mon, species, 1, 32, TRUE, pid, OT_ID_PLAYER_ID, 0);
 
@@ -632,6 +650,9 @@ void GiveEggToPlayer(Daycare *dayCare, Party *party, PlayerProfile *profile) {
     u8 mom_form = GetBoxMonData(Daycare_GetBoxMonI(dayCare, gender_idx[0]), MON_DATA_FORM, NULL);
     SetBreedEggStats(mon, species, dayCare, otId, mom_form);
     InheritIVs(mon, dayCare);
+    if (LegalShiny_IsShiny(otId, GetMonData(mon, MON_DATA_PERSONALITY, NULL))) {
+        GiveShinyEggPerfectIVs(mon);
+    }
     InheritMoves(mon, Daycare_GetBoxMonI(dayCare, gender_idx[1]), Daycare_GetBoxMonI(dayCare, gender_idx[0]));
     MonSetTrainerMemo(mon, profile, 3, sub_02017FE4(MAPSECTYPE_GIFT, 0), HEAP_ID_FIELD1);
     if (species == SPECIES_PICHU) {

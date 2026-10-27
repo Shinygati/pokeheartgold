@@ -263,6 +263,7 @@ Static main
     Object main.nef.p/src_unk_0206B910.c.o
     Object main.nef.p/src_alph_checks.c.o
     Object main.nef.p/src_get_egg.c.o
+    Object main.nef.p/src_legal_shiny.c.o
     Object main.nef.p/src_unk_0206D494.c.o
     Object main.nef.p/src_pokemon.c.o
     Object main.nef.p/src_move.c.o

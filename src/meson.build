@@ -63,6 +63,7 @@ pokeheartgold_c = files(
     'intro_movie_scenes_lib.c',
     'item.c',
     'launch_application.c',
+    'legal_shiny.c',
     'link_ruleset_data.c',
     'list_menu.c',
     'list_menu_2d.c',
