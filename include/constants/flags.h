@@ -2290,4 +2290,9 @@
 #define FLAG_TEMP_x403E 0x403E
 #define FLAG_TEMP_x403F 0x403F
 
+// Flags reused by this fork. FLAG_UNK_0CF is never set or checked by vanilla HG/SS, so saves stay
+// fully compatible. FLAG_TEMP_x403F is RAM-only (never saved).
+#define FLAG_QOL_QUICK_BATTLE_INTRO FLAG_UNK_0CF    // Options: BATTLE SCENE = QUICK
+#define FLAG_QOL_PORTABLE_PC        FLAG_TEMP_x403F // Set only while the start-menu PC is open
+
 #endif // POKEHEARTGOLD_CONSTANTS_FLAGS_H

@@ -79,6 +79,7 @@ u8 GetMonGender(Pokemon *mon);
 u8 GetBoxMonGender(BoxPokemon *boxMon);
 u8 GetGenderBySpeciesAndPersonality(u16 species, u32 pid);
 u8 MonIsShiny(Pokemon *mon);
+u8 MonIsShinyForSummary(Pokemon *mon);
 u8 BoxMonIsShiny(BoxPokemon *boxMon);
 u8 CalcShininessByOtIdAndPersonality(u32 otid, u32 pid);
 u32 GenerateShinyPersonality(u32 otid);

@@ -4,6 +4,7 @@
 
 #include "font.h"
 #include "gf_gfx_loader.h"
+#include "options.h"
 #include "sys_task.h"
 
 static const struct FontInfo *sFonts;
@@ -168,6 +169,11 @@ static u8 AddTextPrinter(TextPrinterTemplate *template, u32 speed, PrinterCallba
 
     sub_020204B8(printer);
 
+    // Player-selected text speed resolves to delay 1 (FAST); with INST chosen, keep the normal
+    // task-based printer (so waits/scroll prompts still work) but draw every glyph up to the next
+    // wait in a single frame.
+    printer->instant = (speed == 1 && Options_IsInstantTextActive());
+
     if (speed != TEXT_SPEED_NOTRANSFER && speed != TEXT_SPEED_INSTANT) {
         printer->textSpeedBottom--;
         printer->textSpeedTop = 1;
@@ -208,7 +214,19 @@ static void RunTextPrinter(SysTask *task, TextPrinter *printer) {
 
         GenerateFontHalfRowLookupTable(printer->template.fgColor, printer->template.bgColor, printer->template.shadowColor);
 
-        switch (RenderFont(printer)) {
+        RenderResult result = RenderFont(printer);
+
+        if (printer->instant && result == RENDER_PRINT) {
+            int guard = 0;
+
+            do {
+                result = RenderFont(printer);
+            } while (result == RENDER_PRINT && ++guard < 0x400);
+
+            CopyWindowToVram(printer->template.window);
+        }
+
+        switch (result) {
         case RENDER_PRINT:
             CopyWindowToVram(printer->template.window);
             // fallthrough

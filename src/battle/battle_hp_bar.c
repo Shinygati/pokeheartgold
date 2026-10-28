@@ -275,6 +275,9 @@ static void ov12_022655B0(BattleHpBar *hpBar, int a1);
 static void BattleHpBar_PrintSafariOrParkBallsString(BattleHpBar *hpBar, u32 flag);
 static void BattleHpBar_PrintNumRemainingSafariOrParkBalls(BattleHpBar *hpBar, u32 flag);
 static int ov12_022657E4(BattleHpBar *hpBar, BOOL isExp);
+
+#define HP_GAUGE_STEPS_PER_FRAME  2 // fork
+#define EXP_GAUGE_STEPS_PER_FRAME 3 // fork
 static void ov12_02265878(BattleHpBar *hpBar, u8 isExp);
 static int BattleHpBar_CalculatePixelsChangeFrame(s32 maxHp, s32 curHp, s32 deltaHp, s32 *pHpCalc, u8 tilesWide, u16 hpChange);
 static u8 BattleHpBar_Util_MakeHpBarPixelBuffer(s32 maxHp, s32 hp, s32 deltaHp, s32 *pHpCalc, u8 *pixelBuf, u8 tilesWide);
@@ -1380,15 +1383,28 @@ static void BattleHpBar_PrintNumRemainingSafariOrParkBalls(BattleHpBar *hpBar, u
 
 static int ov12_022657E4(BattleHpBar *hpBar, BOOL isExp) {
     int ret;
+    int i;
     if (isExp == FALSE) {
-        ret = BattleHpBar_CalculatePixelsChangeFrame(hpBar->maxHp, hpBar->hp, hpBar->gainedHp, &hpBar->hpCalc, 6, 1);
+        // Fork: faster HP drain, several gauge steps per frame.
+        for (i = 0; i < HP_GAUGE_STEPS_PER_FRAME; i++) {
+            ret = BattleHpBar_CalculatePixelsChangeFrame(hpBar->maxHp, hpBar->hp, hpBar->gainedHp, &hpBar->hpCalc, 6, 1);
+            if (ret == -1) {
+                break;
+            }
+        }
     } else {
         // Supposedly this will make the exp bar move at a consistent speed regardless of the gauge size.
         int denom = BattleHpBar_Util_GetPixelsToGain(hpBar->exp, hpBar->gainedExp, hpBar->maxExp, 12);
         if (denom == 0) {
             denom = 1;
         }
-        ret = BattleHpBar_CalculatePixelsChangeFrame(hpBar->maxExp, hpBar->exp, hpBar->gainedExp, &hpBar->expCalc, 12, abs(hpBar->gainedExp / denom));
+        // Fork: faster EXP fill, several gauge steps per frame.
+        for (i = 0; i < EXP_GAUGE_STEPS_PER_FRAME; i++) {
+            ret = BattleHpBar_CalculatePixelsChangeFrame(hpBar->maxExp, hpBar->exp, hpBar->gainedExp, &hpBar->expCalc, 12, abs(hpBar->gainedExp / denom));
+            if (ret == -1) {
+                break;
+            }
+        }
     }
     if (isExp != FALSE || hpBar->unk_4F_3 != TRUE) {
         ov12_02265878(hpBar, isExp);

@@ -125,6 +125,10 @@ SaveData *SaveData_Get(void) {
     return sSaveDataPtr;
 }
 
+SaveData *SaveData_GetOrNull(void) {
+    return sSaveDataPtr;
+}
+
 void *SaveArray_Get(SaveData *saveData, int id) {
     GF_ASSERT(id < SAVE_BLOCK_NUM);
     return (void *)&saveData->dynamic_region[saveData->arrayHeaders[id].offset];

@@ -16,6 +16,10 @@
 #include "unk_02037C94.h"
 #include "unk_020755E8.h"
 #include "vram_transfer_manager.h"
+#include "save.h"
+#include "save_vars_flags.h"
+#include "bg_window.h"
+#include "sprite_system.h"
 
 FS_EXTERN_OVERLAY(OVY_5);
 FS_EXTERN_OVERLAY(OVY_6);
@@ -42,11 +46,51 @@ typedef enum BattleState {
     BSTATE_EXIT
 } BattleState;
 
+// ---- Fork: BATTLE SCENE = QUICK (faster battle intro) ----
+// The intro tasks are still in assembly (overlay_12_battle_controller_opponent.s); they call these
+// helpers instead of using fixed delays/steps. Only for local battles that are not recorded or
+// played back, so link battles and replays keep vanilla timing.
+#define QUICK_INTRO_SPEED 4
+#define QUICK_INTRO_DELAY 4
+
+static BOOL sQuickIntroActive;
+
+static void QuickIntro_InitForBattle(BattleSetup *setup) {
+    SaveData *saveData = SaveData_GetOrNull();
+
+    sQuickIntroActive = saveData != NULL
+        && Save_VarsFlags_CheckFlagInArray(Save_VarsFlags_Get(saveData), FLAG_QOL_QUICK_BATTLE_INTRO)
+        && !(setup->battleType & BATTLE_TYPE_LINK)
+        && !(setup->battleSpecial & (BATTLE_SPECIAL_RECORDING | BATTLE_SPECIAL_RECORDED));
+}
+
+u32 QuickIntro_GetIntroDelay(void) {
+    return sQuickIntroActive ? QUICK_INTRO_DELAY : 28;
+}
+
+void QuickIntro_OffsetPositionXY(ManagedSprite *sprite, s16 dx, s16 dy) {
+    ManagedSprite_OffsetPositionXY(sprite, sQuickIntroActive ? dx * QUICK_INTRO_SPEED : dx, dy);
+}
+
+// Trainer intro background scroll: vanilla scrolls 4px per frame for 33 frames (counter at +0x20 of
+// the task data, BattleSystem pointer at +0). QUICK does several of those steps per frame.
+void QuickIntro_ScrollTrainerBg(void *taskData) {
+    BattleSystem *battleSys = *(BattleSystem **)taskData;
+    int *counter = (int *)((u8 *)taskData + 0x20);
+    int steps = sQuickIntroActive ? QUICK_INTRO_SPEED : 1;
+
+    for (int i = 0; i < steps && *counter < 33; i++) {
+        BgSetPosTextAndCommit(BattleSystem_GetBgConfig(battleSys), GF_BG_LYR_MAIN_3, BG_POS_OP_ADD_X, 4);
+        (*counter)++;
+    }
+}
+
 BOOL Battle_Run(OverlayManager *man, int *state) {
     BattleSetup *setup = OverlayManager_GetArgs(man);
 
     switch (*state) {
     case BSTATE_INIT:
+        QuickIntro_InitForBattle(setup);
         Heap_Create(HEAP_ID_3, HEAP_ID_BATTLE, 0xB0000);
         if ((setup->battleType & BATTLE_TYPE_LINK) && !(setup->battleSpecial & BATTLE_SPECIAL_RECORDING)) {
             *state = BSTATE_LINK_INIT;

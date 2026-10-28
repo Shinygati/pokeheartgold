@@ -233,23 +233,17 @@ static int Daycare_EverstoneCheck(Daycare *dayCare) {
             num_everstones++;
         }
     }
+    // Fork (Gen 6 style): an Everstone always passes its holder's nature (vanilla: ~50%).
+    // Egg PIDs have no RNG correlation in Gen 4, so this stays legal.
     if (num_everstones == 2) {
         if (LCRandom() % 2 == 0) { // everstone_idx is set to the opposite value for some reason.
             everstone_idx = 1;
         } else {
             everstone_idx = 0;
         }
-        if (LCRandom() >= 0x7FFF) { // This is probably supposed to be 50%, but is actually ~50.0015%.
-            return -1;
-        } else {
-            return everstone_idx;
-        }
+        return everstone_idx;
     } else if (num_everstones == 1) {
-        if (LCRandom() >= 0x7FFF) { // Same here.
-            return -1;
-        } else {
-            return everstone_idx;
-        }
+        return everstone_idx;
     } else {
         return -1;
     }
@@ -292,10 +286,14 @@ static void _IVList_Remove(u8 *list, int statID) {
     }
 }
 
+// Fork (Gen 6 style): a Destiny Knot on either parent passes 5 IVs instead of 3.
+#define NUM_INHERITED_IVS_DESTINY_KNOT 5
+
 static void InheritIVs(Pokemon *egg, Daycare *dayCare) {
-    u8 statsToInherit[NUM_INHERITED_IVS];
+    u8 statsToInherit[NUM_INHERITED_IVS_DESTINY_KNOT];
     u8 statList[NUM_STATS];
-    u8 monToInheritFrom[NUM_INHERITED_IVS];
+    u8 monToInheritFrom[NUM_INHERITED_IVS_DESTINY_KNOT];
+    u8 numInherited = NUM_INHERITED_IVS;
     u8 inheritedIV;
     u8 powerItemStat;
     u8 daycareSlot;
@@ -306,6 +304,12 @@ static void InheritIVs(Pokemon *egg, Daycare *dayCare) {
         statList[i] = i;
     }
 
+    for (i = 0; i < NUM_DAYCARE_MONS; i++) {
+        if (GetBoxMonData(Daycare_GetBoxMonI(dayCare, i), MON_DATA_HELD_ITEM, NULL) == ITEM_DESTINY_KNOT) {
+            numInherited = NUM_INHERITED_IVS_DESTINY_KNOT;
+        }
+    }
+
     if (Daycare_TryGetForcedInheritedIV(dayCare, &powerItemStat, &daycareSlot)) {
         statsToInherit[0] = powerItemStat;
         startNum = 1;
@@ -314,7 +318,7 @@ static void InheritIVs(Pokemon *egg, Daycare *dayCare) {
     } else {
         startNum = 0;
     }
-    for (i = startNum; i < NUM_INHERITED_IVS; i++) {
+    for (i = startNum; i < numInherited; i++) {
         u8 statToInherit = (LCRandom() % (NUM_STATS - i));
         statsToInherit[i] = statList[statToInherit];
         _IVList_Remove(statList, statToInherit);
@@ -322,10 +326,10 @@ static void InheritIVs(Pokemon *egg, Daycare *dayCare) {
     GF_ASSERT(statsToInherit[0] != statsToInherit[1]);
     GF_ASSERT(statsToInherit[1] != statsToInherit[2]);
     GF_ASSERT(statsToInherit[2] != statsToInherit[0]);
-    for (i = startNum; i < NUM_INHERITED_IVS; i++) {
+    for (i = startNum; i < numInherited; i++) {
         monToInheritFrom[i] = LCRandom() % 2;
     }
-    for (i = 0; i < NUM_INHERITED_IVS; i++) {
+    for (i = 0; i < numInherited; i++) {
         BoxPokemon *boxMon = Daycare_GetBoxMonI(dayCare, monToInheritFrom[i]);
         switch (statsToInherit[i]) {
         case STAT_HP:

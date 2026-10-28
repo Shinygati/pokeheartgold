@@ -365,9 +365,10 @@ BOOL FieldSystem_PerformFishEncounterCheck(FieldSystem *fieldSystem, u8 rodType,
     Pokemon *leadMon = Party_GetMonByIndex(SaveArray_Party_Get(fieldSystem->saveData), 0);
     EncounterGenState_Init(fieldSystem, leadMon, NULL, &encounterGen);
     encounterRate = ApplyAbilityEffectToEncounterRate(TRUE, encounterRate, &encounterGen, LocalFieldData_GetWeatherType(Save_LocalFieldData_Get(fieldSystem->saveData)), leadMon);
-    if (LCRandRange(100) >= encounterRate) {
-        return FALSE;
-    }
+    // Fork: fishing always hooks. Instead of failing, keep rolling the hook check until it passes;
+    // each roll is the same single RNG call as vanilla, so the call before the slot is still a
+    // passing hook roll.
+    while (LCRandRange(100) >= encounterRate) {}
     BOOL safariFlag = Save_VarsFlags_CheckSafariSysFlag(Save_VarsFlags_Get(fieldSystem->saveData));
     if (safariFlag) {
         FieldSystem_CreateBattleSetupForWildBattle(fieldSystem, ENCOUNTER_CONTEXT_SAFARI, pBattleSetup);

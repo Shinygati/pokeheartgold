@@ -17,6 +17,15 @@ A modified fork of the [pret/pokeheartgold](https://github.com/pret/pokeheartgol
 | Catch rate | ×3 for all Poké Balls in all areas |
 | Battle menu | Pressing B moves the cursor to Run |
 | Party menu | New **Edit EVS** option for editing EVs directly |
+| Text speed | TEXT SPEED is now a carousel with a new **INST** speed: each message box prints instantly |
+| Battle intro | BATTLE SCENE has a third button, **QUICK**: move animations on and a 4× faster battle intro |
+| HP / EXP bars | HP bars drain 2× faster and EXP bars fill 3× faster |
+| TMs | TMs are reusable and are not used up when a move is taught |
+| PC | Press **SELECT** in towns and on routes to open the PC (not in the Safari Game, Bug-Catching Contest or Pal Park) |
+| Move Maniac | The Blackthorn Move Maniac is free: no Heart Scale needed |
+| Fishing | Fishing always hooks, and a hooked Pokémon never gets away |
+| Breeding | An Everstone on either parent always passes its Nature; a Destiny Knot on either parent passes 5 IVs |
+| Shiny Eggs | The summary screen shows the shiny star on Eggs that will hatch shiny |
 
 ## Shiny Odds
 
@@ -96,6 +105,10 @@ src/field_warp_tasks.c
 ```
 
 Paths may differ slightly depending on the repository layout.
+
+## Save Compatibility
+
+Saves stay compatible with unmodified HeartGold/SoulSilver. INST text is stored as FAST plus a spare bit in the options that vanilla ignores, BATTLE SCENE = QUICK uses `FLAG_UNK_0CF` (never touched by vanilla), and the SELECT PC uses a RAM-only flag that is never saved.
 
 ## Building
 

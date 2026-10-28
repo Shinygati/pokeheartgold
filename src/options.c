@@ -64,6 +64,26 @@ u8 Options_GetTextFrameDelay(Options *options) {
     return 1;
 }
 
+BOOL Options_GetInstantText(Options *options) {
+    return options->instantText;
+}
+
+void Options_SetInstantText(Options *options, BOOL instant) {
+    options->instantText = (instant != FALSE);
+}
+
+// True when the player picked INST text speed. INST is stored as FAST (2) plus the spare
+// instantText bit, so a vanilla game loading this save just sees FAST.
+BOOL Options_IsInstantTextActive(void) {
+    SaveData *saveData = SaveData_GetOrNull();
+    if (saveData == NULL) {
+        return FALSE;
+    }
+
+    Options *options = Save_PlayerData_GetOptionsAddr(saveData);
+    return options->textSpeed == 2 && options->instantText;
+}
+
 u32 Options_GetSoundMethod(Options *options) {
     return options->soundMethod;
 }

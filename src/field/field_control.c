@@ -92,6 +92,27 @@ static void FieldSystem_TrySetMapConnection(FieldSystem *fieldSystem);
 static void FieldSystem_ProcessSoundplateAtCoords(FieldSystem *fieldSystem, int x, int z);
 static u16 GetInteractedHeadbuttTreeScript(FieldSystem *fieldSystem);
 
+// Fork: SELECT opens the PC, outdoors only (towns and routes), once the player has a Pokémon, and
+// not during the Safari Game, Bug-Catching Contest or Pal Park.
+static BOOL FieldSystem_CanUsePortablePC(FieldSystem *fieldSystem) {
+    SaveVarsFlags *varsFlags = Save_VarsFlags_Get(fieldSystem->saveData);
+    MapType mapType = MapHeader_GetMapType(fieldSystem->location->mapId);
+
+    if (mapType != MAP_TYPE_CITY_TOWN && mapType != MAP_TYPE_ROUTE) {
+        return FALSE;
+    }
+
+    if (!CheckGotStarter(varsFlags) || !FieldSystem_MapIsNotMysteryZone(fieldSystem)) {
+        return FALSE;
+    }
+
+    if (Save_VarsFlags_CheckSafariSysFlag(varsFlags) || Save_VarsFlags_CheckBugContestFlag(varsFlags) || Save_VarsFlags_CheckPalParkSysFlag(varsFlags)) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 static void FieldInput_Clear(FieldInput *fieldInput) {
     fieldInput->interact = 0;
     fieldInput->endMovement = 0;
@@ -106,6 +127,7 @@ static void FieldInput_Clear(FieldInput *fieldInput) {
     fieldInput->unk0_B = 0;
     fieldInput->unk0_C = 0;
     fieldInput->unk0_D = 0;
+    fieldInput->portablePC = 0;
     fieldInput->playerDir = DIR_NONE;
     fieldInput->transitionDir = DIR_NONE;
 }
@@ -161,6 +183,8 @@ void FieldInput_Update(FieldInput *fieldInput, FieldSystem *fieldSystem, u16 new
             }
         } else if (newKeys & PAD_BUTTON_A) {
             fieldInput->interact = TRUE;
+        } else if (newKeys & PAD_BUTTON_SELECT) {
+            fieldInput->portablePC = TRUE; // fork
         }
         if (PAD_PLUS_KEY_MASK & heldKeys) {
             fieldInput->sign = TRUE;
@@ -303,6 +327,11 @@ int FieldInput_Process(FieldInput *fieldInput, FieldSystem *fieldSystem) {
         PlaySE(SEQ_SE_DP_WIN_OPEN);
         StartMenu_Init(fieldSystem);
         return 2;
+    }
+
+    if (fieldInput->portablePC && FieldSystem_CanUsePortablePC(fieldSystem)) {
+        StartMapSceneScript(fieldSystem, std_portable_pc, NULL);
+        return 1;
     }
 
     if (ov02_02252334(fieldSystem)) {

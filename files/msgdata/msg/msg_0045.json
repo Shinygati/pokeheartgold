@@ -240,6 +240,14 @@
     {
       "id": "msg_0045_00059",
       "en_US": "WINDOW TYPE 20"
+    },
+    {
+      "id": "msg_0045_00060",
+      "en_US": "INST"
+    },
+    {
+      "id": "msg_0045_00061",
+      "en_US": "QUICK"
     }
   ]
 }

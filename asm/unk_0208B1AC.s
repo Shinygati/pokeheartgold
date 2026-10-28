@@ -1501,9 +1501,7 @@ _0208BD6A:
 	lsr r1, r1, #0x1f
 	cmp r1, #1
 	bne _0208BD92
-	lsl r0, r0, #3
-	lsr r0, r0, #0x1f
-	bne _0208BD92
+	; fork: removed the isEgg check so shiny Eggs also show the star
 	ldr r0, _0208BDC0 ; =0x000004D4
 	mov r1, #1
 	ldr r0, [r6, r0]

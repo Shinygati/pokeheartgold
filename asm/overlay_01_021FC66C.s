@@ -312,7 +312,7 @@ ov01_021FC88C: ; 0x021FC88C
 	sub r0, r0, #1
 	str r0, [r5, #0x14]
 	bl ov01_021FCAE8
-	cmp r0, #1
+	cmp r0, #2 ; fork: was #1. A fish is guaranteed, so reeling in early is ignored (never matches)
 	bne _021FC8A8
 	mov r0, #0xa
 	str r0, [r5, #0xc]
@@ -372,7 +372,7 @@ _021FC902:
 	mov r0, #0
 	pop {r4, pc}
 _021FC90C:
-	mov r0, #0xb
+	mov r0, #6 ; fork: was #0xb (got away). Out of time now reels the Pokémon in anyway
 	str r0, [r4, #0xc]
 	mov r0, #0
 	pop {r4, pc}

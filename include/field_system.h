@@ -261,6 +261,7 @@ typedef struct FieldInput {
     u16 unk0_B : 1;
     u16 unk0_C : 1;
     u16 unk0_D : 1;
+    u16 portablePC : 1; // fork: SELECT pressed (opens the PC outdoors)
     u16 unk2;
     u8 playerDir;
     s8 transitionDir;

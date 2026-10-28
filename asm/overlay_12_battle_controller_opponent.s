@@ -5819,7 +5819,7 @@ _0225B4B8: ; jump table
 	.short _0225B728 - _0225B4B8 - 2 ; case 3
 	.short _0225B77C - _0225B4B8 - 2 ; case 4
 _0225B4C2:
-	mov r0, #0x1c
+	bl QuickIntro_GetIntroDelay ; fork: 28 frames, or 4 with BATTLE SCENE = QUICK
 	str r0, [r4, #0x20]
 	ldrb r0, [r4, #0x12]
 	add r0, r0, #1
@@ -5859,7 +5859,7 @@ _0225B4FA:
 	ldr r0, [r0]
 	mov r1, #8
 	mov r2, #0
-	bl ManagedSprite_OffsetPositionXY
+	bl QuickIntro_OffsetPositionXY ; fork: 4x step with BATTLE SCENE = QUICK
 	b _0225B51C
 _0225B512:
 	ldr r0, [r0]
@@ -6008,7 +6008,7 @@ _0225B62E:
 	ldr r0, [r0]
 	sub r1, #0xa
 	mov r2, #0
-	bl ManagedSprite_OffsetPositionXY
+	bl QuickIntro_OffsetPositionXY ; fork: 4x step with BATTLE SCENE = QUICK
 	b _0225B650
 _0225B646:
 	ldr r0, [r0]
@@ -6213,7 +6213,7 @@ _0225B7DC: ; jump table
 	.short _0225B8D0 - _0225B7DC - 2 ; case 3
 	.short _0225B924 - _0225B7DC - 2 ; case 4
 _0225B7E6:
-	mov r0, #0x1c
+	bl QuickIntro_GetIntroDelay ; fork: 28 frames, or 4 with BATTLE SCENE = QUICK
 	str r0, [r4, #0x20]
 	ldrb r0, [r4, #0x12]
 	add r0, r0, #1
@@ -6250,7 +6250,7 @@ _0225B818:
 	ldr r0, [r0]
 	mov r1, #8
 	mov r2, #0
-	bl ManagedSprite_OffsetPositionXY
+	bl QuickIntro_OffsetPositionXY ; fork: 4x step with BATTLE SCENE = QUICK
 	b _0225B83A
 _0225B830:
 	ldr r0, [r0]
@@ -8967,15 +8967,8 @@ ov12_0225CE28: ; 0x0225CE28
 	cmp r0, #2
 	bne _0225CE64
 _0225CE4E:
-	ldr r0, [r4]
-	bl BattleSystem_GetBgConfig
-	mov r1, #3
-	mov r2, #1
-	mov r3, #4
-	bl BgSetPosTextAndCommit
-	ldr r0, [r4, #0x20]
-	add r0, r0, #1
-	str r0, [r4, #0x20]
+	add r0, r4, #0
+	bl QuickIntro_ScrollTrainerBg ; fork: scrolls BG and advances the counter at +0x20
 _0225CE64:
 	ldrb r0, [r4, #0x12]
 	cmp r0, #4
@@ -9006,7 +8999,7 @@ _0225CE82:
 	mov r1, #2
 	bl ManagedSprite_SetAnim
 _0225CE9C:
-	mov r0, #0x1c
+	bl QuickIntro_GetIntroDelay ; fork: 28 frames, or 4 with BATTLE SCENE = QUICK
 	str r0, [r4, #0x1c]
 	mov r0, #1
 	strb r0, [r4, #0x12]
@@ -9049,7 +9042,7 @@ _0225CEDC:
 	ldr r0, [r0]
 	mov r1, #8
 	mov r2, #0
-	bl ManagedSprite_OffsetPositionXY
+	bl QuickIntro_OffsetPositionXY ; fork: 4x step with BATTLE SCENE = QUICK
 	b _0225CEFE
 _0225CEF4:
 	ldr r0, [r0]
@@ -9191,7 +9184,7 @@ _0225CFF6:
 	ldr r0, [r0]
 	sub r1, #0xe
 	mov r2, #0
-	bl ManagedSprite_OffsetPositionXY
+	bl QuickIntro_OffsetPositionXY ; fork: 4x step with BATTLE SCENE = QUICK
 	b _0225D018
 _0225D00E:
 	ldr r0, [r0]
@@ -9970,7 +9963,7 @@ _0225D664:
 	ldr r0, [r0, #0x18]
 	mov r1, #5
 	mov r2, #0
-	bl ManagedSprite_OffsetPositionXY
+	bl QuickIntro_OffsetPositionXY ; fork: 4x step with BATTLE SCENE = QUICK
 	ldr r0, [r5, #4]
 	add r1, sp, #0
 	ldr r0, [r0, #0x18]
@@ -10051,7 +10044,7 @@ _0225D71C:
 	ldr r0, [r0, #0x18]
 	mvn r1, r1
 	mov r2, #0
-	bl ManagedSprite_OffsetPositionXY
+	bl QuickIntro_OffsetPositionXY ; fork: 4x step with BATTLE SCENE = QUICK
 	ldr r0, [r5, #4]
 	add r1, sp, #0
 	ldr r0, [r0, #0x18]
@@ -10231,7 +10224,7 @@ _0225D8A6:
 	ldr r0, [r0, #0x18]
 	mov r1, #5
 	mov r2, #0
-	bl ManagedSprite_OffsetPositionXY
+	bl QuickIntro_OffsetPositionXY ; fork: 4x step with BATTLE SCENE = QUICK
 	ldr r0, [r5, #4]
 	add r1, sp, #0
 	ldr r0, [r0, #0x18]
@@ -10255,7 +10248,7 @@ _0225D8DE:
 	ldr r0, [r0, #0x18]
 	mvn r1, r1
 	mov r2, #0
-	bl ManagedSprite_OffsetPositionXY
+	bl QuickIntro_OffsetPositionXY ; fork: 4x step with BATTLE SCENE = QUICK
 	ldr r0, [r5, #4]
 	add r1, sp, #0
 	ldr r0, [r0, #0x18]

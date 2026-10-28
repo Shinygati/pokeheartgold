@@ -77,6 +77,7 @@
 	ScrDef scr_seq_0003_069
 	ScrDef scr_seq_0003_070
 	ScrDef scr_seq_0003_071
+	ScrDef scr_seq_0003_072
 	ScrDefEnd
 
 scr_seq_0003_002:
@@ -753,6 +754,7 @@ _09F5:
 scr_seq_0003_010:
 	ScrCmd_609
 	LockAll
+	ClearFlag FLAG_QOL_PORTABLE_PC
 	PlaySE SEQ_SE_DP_PC_ON
 	Call _0A18
 	BufferPlayersName 0
@@ -760,13 +762,28 @@ scr_seq_0003_010:
 	TouchscreenMenuHide
 	GoTo _0A2E
 
+// Fork: portable PC (SELECT outdoors). Same menus as a real PC, minus the PC screen animation.
+scr_seq_0003_072:
+	LockAll
+	SetFlag FLAG_QOL_PORTABLE_PC
+	PlaySE SEQ_SE_DP_PC_ON
+	BufferPlayersName 0
+	NPCMsg msg_0040_00033
+	TouchscreenMenuHide
+	GoTo _0A2E
+
+_PortablePCSkipAnim:
+	Return
+
 _0A18:
+	GoToIfSet FLAG_QOL_PORTABLE_PC, _PortablePCSkipAnim
 	ScrCmd_500 90
 	ScrCmd_501 90
 	ScrCmd_308 90
 	Return
 
 _0A23:
+	GoToIfSet FLAG_QOL_PORTABLE_PC, _PortablePCSkipAnim
 	ScrCmd_502 90
 	ScrCmd_308 90
 	ScrCmd_309 90
@@ -1002,6 +1019,7 @@ _0DF0:
 	CloseMsg
 	PlaySE SEQ_SE_DP_PC_LOGOFF
 	Call _0A23
+	ClearFlag FLAG_QOL_PORTABLE_PC
 	TouchscreenMenuShow
 	ReleaseAll
 	End
@@ -1015,6 +1033,7 @@ _0E02:
 _0E16:
 	FadeScreen 6, 1, 0, RGB_BLACK
 	WaitFade
+	GoToIfSet FLAG_QOL_PORTABLE_PC, _PortablePCSkipAnim
 	ScrCmd_309 90
 	Return
 

@@ -901,9 +901,7 @@ void PartyMenu_LearnMoveToSlot(PartyMenu *partyMenu, Pokemon *mon, int moveIdx) 
     data = GetMoveMaxPP(partyMenu->args->moveId, 0);
     SetMonData(mon, MON_DATA_MOVE1_PP + moveIdx, &data);
     if (partyMenu->args->itemId != ITEM_NONE) {
-        if (!MoveIsHM(partyMenu->args->moveId)) {
-            Bag_TakeItem(partyMenu->args->bag, partyMenu->args->itemId, 1, HEAP_ID_PARTY_MENU);
-        }
+        // Reusable TMs: TMs are no longer consumed when a move is taught (HMs never were).
         MonApplyFriendshipMod(mon, FRIENDSHIP_EVENT_LEARN_TMHM, PartyMenu_GetCurrentMapSec(partyMenu));
         ApplyMonMoodModifier(mon, MON_MOOD_MODIFIER_LEARN_TMHM);
     }

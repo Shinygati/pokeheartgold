@@ -76,25 +76,22 @@
         "make Pokémon remember those moves.\r",
         "I can make a Pokémon of yours remember\n",
         "a move if you’d like.\r",
-        "But...ahem! It’ll cost you.\r",
-        "I’ll make a Pokémon remember a move\n",
-        "if you’ll trade me a Heart Scale."
+        "And I won’t even ask for anything\n",
+        "in return!\r"
       ]
     },
     {
       "id": "msg_0635_T30R0601_00010",
       "en_US": [
-        "Ha! That’s it! That’s an honest-to-\n",
-        "goodness Heart Scale!\r",
-        "Let me guess, you want me to teach\n",
-        "one of your Pokémon a move?\r"
+        "So, you want me to help one of\n",
+        "your Pokémon remember a move?\r"
       ]
     },
     {
       "id": "msg_0635_T30R0601_00011",
       "en_US": [
-        "If any of your Pokémon needs to learn a\n",
-        "move, come back with a Heart Scale."
+        "If any of your Pokémon needs to remember\n",
+        "a move, come and see me any time."
       ]
     },
     {
@@ -161,8 +158,8 @@
     {
       "id": "msg_0635_T30R0601_00025",
       "en_US": [
-        "{STRVAR_1 3, 3, 0} handed over one\n",
-        "Heart Scale in exchange."
+        "Come back any time your Pokémon\n",
+        "want to remember a move!"
       ]
     },
     {

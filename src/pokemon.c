@@ -14,6 +14,8 @@
 #include "item.h"
 #include "mail.h"
 #include "map_section.h"
+#include "player_data.h"
+#include "save.h"
 #include "math_util.h"
 #include "move.h"
 #include "msgdata.h"
@@ -2117,6 +2119,32 @@ BOOL BoxMonIsHoldingMail(BoxPokemon *boxMon) {
 
 u8 MonIsShiny(Pokemon *mon) {
     return BoxMonIsShiny(&mon->box);
+}
+
+// Fork: used by the summary screen. Eggs show the shiny star when they will hatch shiny for the
+// player: a Gen 4 egg is judged against whoever hatches it, so use the player's IDs instead of the
+// egg's OT. A Ranger Manaphy Egg hatched by the trainer who received it is re-rolled to
+// non-shiny on hatch (vanilla), so it never gets the star.
+u8 MonIsShinyForSummary(Pokemon *mon) {
+    if (!GetMonData(mon, MON_DATA_IS_EGG, NULL)) {
+        return MonIsShiny(mon);
+    }
+
+    SaveData *saveData = SaveData_GetOrNull();
+    if (saveData == NULL) {
+        return MonIsShiny(mon);
+    }
+
+    u32 playerId = PlayerProfile_GetTrainerID(Save_PlayerData_GetProfile(saveData));
+    u32 pid = GetMonData(mon, MON_DATA_PERSONALITY, NULL);
+
+    if (GetMonData(mon, MON_DATA_SPECIES, NULL) == SPECIES_MANAPHY
+        && GetMonData(mon, MON_DATA_EGG_LOCATION, NULL) == sub_02017FE4(MAPSECTYPE_EXTERNAL, 1)
+        && GetMonData(mon, MON_DATA_OT_ID, NULL) == playerId) {
+        return FALSE;
+    }
+
+    return CalcShininessByOtIdAndPersonality(playerId, pid);
 }
 
 u8 BoxMonIsShiny(BoxPokemon *boxMon) {

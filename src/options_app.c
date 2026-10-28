@@ -14,6 +14,9 @@
 #include "menu_input_state.h"
 #include "msgdata.h"
 #include "options.h"
+#include "player_data.h"
+#include "save.h"
+#include "save_vars_flags.h"
 #include "render_text.h"
 #include "render_window.h"
 #include "screen_fade.h"
@@ -84,8 +87,10 @@ typedef struct OptionsApp_Data {
     OptionsApp_MenuEntry menuEntries[MENU_ENTRY_COUNT];
     SpriteSystem *spriteRenderer;
     SpriteManager *spriteGfxHandler;
-    Sprite *sprites[9];
-    u8 filler2FC[36];
+    Sprite *sprites[11]; // fork: [9]/[10] are the TEXT SPEED carousel arrows
+    u8 filler2FC[28];
+    u8 origInstantText; // fork: values to restore on QUIT (the preview changes them live)
+    u8 origQuickIntro;
     u32 menuInputState;
     String *frameNumText;
     u8 textPrinter;
@@ -109,17 +114,22 @@ static const u32 sOptionsAppBgLayers[5] = {
     GF_BG_LYR_SUB_1,
 };
 
+// Vanilla counts: used to walk the message bank. The fork then appends INST to TEXT SPEED and
+// QUICK to BATTLE SCENE from new messages at the end of the bank (see LoadMenuEntriesData).
 static const int sNumChoicesPerMenuEntry[MENU_ENTRY_COUNT] = {
     3, 2, 2, 2, 2, 20, 2
 };
+
+#define TEXT_SPEED_CHOICE_INSTANT  3 // stored as FAST + Options.instantText
+#define BATTLE_SCENE_CHOICE_QUICK  2 // stored as battleScene ON + FLAG_QOL_QUICK_BATTLE_INTRO
 
 static const int sMenuEntryBorderYCoords[MENU_ENTRY_COUNT] = {
     -8, -32, -56, -80, -104, -128, -156
 };
 
 static const u16 sOptionChoiceLabelXCoords[MENU_ENTRY_COUNT][3] = {
-    { 124, 172, 220 },
-    { 124, 172, 0   },
+    { 172, 0,   0   }, // fork: TEXT SPEED is a carousel like FRAME
+    { 124, 172, 220 }, // fork: BATTLE SCENE has a third button (QUICK)
     { 132, 212, 0   },
     { 132, 212, 0   },
     { 132, 212, 0   },
@@ -136,9 +146,9 @@ static const int sActiveButtonXCoords[5][3] = {
 };
 
 static const TouchscreenHitbox sOptionsAppTouchscreenHitboxes[16] = {
-    { .rect = { .top = 26, .bottom = 46, .left = 112, .right = 151 } },
-    { .rect = { .top = 26, .bottom = 46, .left = 160, .right = 200 } },
-    { .rect = { .top = 26, .bottom = 46, .left = 208, .right = 248 } },
+    { .rect = { .top = 26, .bottom = 46, .left = 110, .right = 150 } }, // fork: TEXT SPEED left arrow
+    { .rect = { .top = 26, .bottom = 46, .left = 208, .right = 253 } }, // fork: TEXT SPEED right arrow
+    { .rect = { .top = 50, .bottom = 70, .left = 208, .right = 248 } }, // fork: BATTLE SCENE QUICK
     { .rect = { .top = 50, .bottom = 70, .left = 112, .right = 151 } },
     { .rect = { .top = 50, .bottom = 70, .left = 160, .right = 200 } },
     { .rect = { .top = 74, .bottom = 93, .left = 112, .right = 167 } },
@@ -155,9 +165,9 @@ static const TouchscreenHitbox sOptionsAppTouchscreenHitboxes[16] = {
 };
 
 static const u32 ov54_021E6DA8[15][2] = {
-    { MENU_ENTRY_TEXT_SPEED,   0 },
-    { MENU_ENTRY_TEXT_SPEED,   1 },
-    { MENU_ENTRY_TEXT_SPEED,   2 },
+    { MENU_ENTRY_TEXT_SPEED,   3 },
+    { MENU_ENTRY_TEXT_SPEED,   4 },
+    { MENU_ENTRY_BATTLE_SCENE, 2 },
     { MENU_ENTRY_BATTLE_SCENE, 0 },
     { MENU_ENTRY_BATTLE_SCENE, 1 },
     { MENU_ENTRY_BATTLE_STYLE, 0 },
@@ -172,7 +182,7 @@ static const u32 ov54_021E6DA8[15][2] = {
     { MENU_ENTRY_6,            6 },
 };
 
-static const UnmanagedSpriteTemplate ov54_021E6EAC[9] = {
+static const UnmanagedSpriteTemplate ov54_021E6EAC[11] = {
     {
      .resourceSet = 0,
      .x = 112,
@@ -298,6 +308,34 @@ static const UnmanagedSpriteTemplate ov54_021E6EAC[9] = {
      .unk_1C = 0,
      .unk_20 = 0,
      .unk_24 = 0,
+     },    // fork: TEXT SPEED carousel arrows (same graphics as the FRAME arrows)
+    {
+     .resourceSet = 1,
+     .x = 115,
+     .y = 24,
+     .z = 0,
+     .animation = 0,
+     .drawPriority = 1,
+     .pal = 0,
+     .vram = NNS_G2D_VRAM_TYPE_2DMAIN,
+     .paletteMode = 0,
+     .unk_1C = 0,
+     .unk_20 = 0,
+     .unk_24 = 0,
+     },
+    {
+     .resourceSet = 2,
+     .x = 213,
+     .y = 24,
+     .z = 0,
+     .animation = 0,
+     .drawPriority = 1,
+     .pal = 0,
+     .vram = NNS_G2D_VRAM_TYPE_2DMAIN,
+     .paletteMode = 0,
+     .unk_1C = 0,
+     .unk_20 = 0,
+     .unk_24 = 0,
      },
 };
 
@@ -339,6 +377,8 @@ BOOL OptionsMenu_Init(OverlayManager *manager, int *state) {
     data->options.soundMethod = Options_GetSoundMethod(args->options);
     data->options.buttonMode = Options_GetButtonMode(args->options);
     data->options.frame = Options_GetFrame(args->options);
+    data->origInstantText = Options_GetInstantText(args->options);
+    data->origQuickIntro = Save_VarsFlags_CheckFlagInArray(Save_VarsFlags_Get(SaveData_Get()), FLAG_QOL_QUICK_BATTLE_INTRO);
 
     data->menuInputPtr = args->menuInputStateMgr;
     data->playerOptionsUnused = args->options;
@@ -360,8 +400,20 @@ BOOL OptionsMenu_Exit(OverlayManager *manager, int *state) {
     OptionsApp_Data *data = OverlayManager_GetData(manager);
 
     if (data->unk10_0 == 1) {
-        data->options.textSpeed = data->menuEntries[MENU_ENTRY_TEXT_SPEED].value;
-        data->options.battleScene = data->menuEntries[MENU_ENTRY_BATTLE_SCENE].value;
+        u32 textSpeedChoice = data->menuEntries[MENU_ENTRY_TEXT_SPEED].value;
+        u32 battleSceneChoice = data->menuEntries[MENU_ENTRY_BATTLE_SCENE].value;
+        SaveVarsFlags *varsFlags = Save_VarsFlags_Get(SaveData_Get());
+
+        data->options.textSpeed = textSpeedChoice == TEXT_SPEED_CHOICE_INSTANT ? 2 : textSpeedChoice;
+        data->options.battleScene = battleSceneChoice == BATTLE_SCENE_CHOICE_QUICK ? 0 : battleSceneChoice;
+        Options_SetInstantText(data->playerOptions, textSpeedChoice == TEXT_SPEED_CHOICE_INSTANT);
+
+        if (battleSceneChoice == BATTLE_SCENE_CHOICE_QUICK) {
+            Save_VarsFlags_SetFlagInArray(varsFlags, FLAG_QOL_QUICK_BATTLE_INTRO);
+        } else {
+            Save_VarsFlags_ClearFlagInArray(varsFlags, FLAG_QOL_QUICK_BATTLE_INTRO);
+        }
+
         data->options.battleStyle = data->menuEntries[MENU_ENTRY_BATTLE_STYLE].value;
         data->options.soundMethod = data->menuEntries[MENU_ENTRY_SOUND_METHOD].value;
         data->options.buttonMode = data->menuEntries[MENU_ENTRY_BUTTON_MODE].value;
@@ -377,6 +429,7 @@ BOOL OptionsMenu_Exit(OverlayManager *manager, int *state) {
         GF_SndSetMonoFlag(data->options.soundMethod);
         Options_SetButtonModeOnMain(NULL, data->options.buttonMode);
         Options_SetTextSpeed(data->playerOptions, data->options.textSpeed);
+        Options_SetInstantText(data->playerOptions, data->origInstantText);
     }
 
     String_Delete(data->frameNumText);
@@ -766,8 +819,22 @@ static void OptionsApp_LoadMenuEntriesData(OptionsApp_Data *data) {
         }
     }
 
+    // fork: extra choices appended from new messages at the end of the bank
+    data->menuEntries[MENU_ENTRY_TEXT_SPEED].strings[TEXT_SPEED_CHOICE_INSTANT] = NewString_ReadMsgData(data->msgData, msg_0045_00060); // INST
+    data->menuEntries[MENU_ENTRY_TEXT_SPEED].numStrings = TEXT_SPEED_CHOICE_INSTANT + 1;
+    data->menuEntries[MENU_ENTRY_BATTLE_SCENE].strings[BATTLE_SCENE_CHOICE_QUICK] = NewString_ReadMsgData(data->msgData, msg_0045_00061); // QUICK
+    data->menuEntries[MENU_ENTRY_BATTLE_SCENE].numStrings = BATTLE_SCENE_CHOICE_QUICK + 1;
+
     data->menuEntries[MENU_ENTRY_TEXT_SPEED].value = data->options.textSpeed;
     data->menuEntries[MENU_ENTRY_BATTLE_SCENE].value = data->options.battleScene;
+
+    if (data->options.textSpeed == 2 && data->origInstantText) {
+        data->menuEntries[MENU_ENTRY_TEXT_SPEED].value = TEXT_SPEED_CHOICE_INSTANT;
+    }
+
+    if (data->options.battleScene == 0 && data->origQuickIntro) {
+        data->menuEntries[MENU_ENTRY_BATTLE_SCENE].value = BATTLE_SCENE_CHOICE_QUICK;
+    }
     data->menuEntries[MENU_ENTRY_BATTLE_STYLE].value = data->options.battleStyle;
     data->menuEntries[MENU_ENTRY_SOUND_METHOD].value = data->options.soundMethod;
     data->menuEntries[MENU_ENTRY_BUTTON_MODE].value = data->options.buttonMode;
@@ -798,10 +865,17 @@ static void ov54_021E6418(OptionsApp_Data *data, u16 menuEntryId) {
     case MENU_ENTRY_BUTTON_MODE:
         Options_SetButtonModeOnMain(NULL, data->menuEntries[menuEntryId].value);
         break;
-    case MENU_ENTRY_TEXT_SPEED:
-        Options_SetTextSpeed(data->playerOptions, data->menuEntries[menuEntryId].value);
+    case MENU_ENTRY_TEXT_SPEED: {
+        // fork: carousel (SLOW/MID/FAST/INST). INST previews as FAST + instantText.
+        u32 choice = data->menuEntries[menuEntryId].value;
+        Options_SetTextSpeed(data->playerOptions, choice == TEXT_SPEED_CHOICE_INSTANT ? 2 : choice);
+        Options_SetInstantText(data->playerOptions, choice == TEXT_SPEED_CHOICE_INSTANT);
+        x = sOptionChoiceLabelXCoords[menuEntryId][0] - FontID_String_GetWidth(0, data->menuEntries[menuEntryId].strings[choice], 0) / 2;
+        AddTextPrinterParameterizedWithColor(&data->windows.selectedOption, 0, data->menuEntries[menuEntryId].strings[choice], x, menuEntryId * 24 + 5, TEXT_SPEED_NOTRANSFER, MAKE_TEXT_COLOR(1, 2, 0), NULL);
+        CopyWindowToVram(&data->windows.selectedOption);
         OptionsApp_PrintTextFrameString(data, data->frameNumText, FALSE);
-        break;
+        return;
+    }
     }
 
     x = 0;
@@ -830,6 +904,12 @@ static void OptionsApp_UpdateMenuEntryCarousel(OptionsApp_Data *data, u32 menuEn
             Sprite_SetAnimCtrlSeq(data->sprites[5], 1);
         } else if (offset == 1) {
             Sprite_SetAnimCtrlSeq(data->sprites[6], 1);
+        }
+    } else if (menuEntryId == MENU_ENTRY_TEXT_SPEED) {
+        if (offset == -1) {
+            Sprite_SetAnimCtrlSeq(data->sprites[9], 1);
+        } else if (offset == 1) {
+            Sprite_SetAnimCtrlSeq(data->sprites[10], 1);
         }
     }
 
@@ -1001,14 +1081,14 @@ static void OptionsApp_SetupSpriteRenderer(OptionsApp_Data *data) {
         .numAffineSub = 32,
     };
     const OamCharTransferParam unk2 = {
-        .maxTasks = 9,
+        .maxTasks = 11,
         .sizeMain = 0x400,
         .sizeSub = 0x400,
         .charModeMain = GX_OBJVRAMMODE_CHAR_1D_32K,
         .charModeSub = GX_OBJVRAMMODE_CHAR_1D_32K,
     };
     SpriteSystem_Init(data->spriteRenderer, &unk1, &unk2, 32);
-    SpriteSystem_InitSprites(data->spriteRenderer, data->spriteGfxHandler, 9);
+    SpriteSystem_InitSprites(data->spriteRenderer, data->spriteGfxHandler, NELEMS(data->sprites));
 
     ResdatIdList fileIdList = {
         .charRes = resdat_00000022_bin,
@@ -1038,10 +1118,11 @@ static void OptionsApp_SetupSprites(OptionsApp_Data *data) {
     }
 
     Sprite_SetDrawFlag(data->sprites[7], TRUE);
+    Sprite_SetDrawFlag(data->sprites[0], FALSE); // fork: TEXT SPEED is a carousel, no button highlight
 }
 
 static void OptionsApp_SetActiveButtonsXPosition(OptionsApp_Data *data) {
-    for (int i = 0; i < 5; i++) {
+    for (int i = 1; i < 5; i++) { // fork: row 0 (TEXT SPEED) is a carousel
         s16 x, y;
         Sprite_GetPositionXY(data->sprites[i], &x, &y);
         x = sActiveButtonXCoords[i][data->menuEntries[i].value];

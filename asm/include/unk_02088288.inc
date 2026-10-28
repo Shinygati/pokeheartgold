@@ -199,3 +199,4 @@
 .public gOverlayTemplate_PokemonSummary
 .public gSystem
 .public OS_IRQTable
+.public MonIsShinyForSummary

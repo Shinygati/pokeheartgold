@@ -105,11 +105,10 @@ scr_seq_T30R0601_001:
 	PlaySE SEQ_SE_DP_SELECT
 	LockAll
 	FacePlayer
+	// Fork: the Move Maniac no longer asks for a Heart Scale.
 	GoToIfUnset FLAG_MET_MOVE_MANIAC, _0238
-	HasItem ITEM_HEART_SCALE, 1, VAR_SPECIAL_RESULT
-	Compare VAR_SPECIAL_RESULT, 0
-	GoToIfEq _022D
 	NPCMsg msg_0635_T30R0601_00010
+_MoveManiacTeach:
 	NPCMsg msg_0635_T30R0601_00012
 	CloseMsg
 	FadeScreen 6, 1, 0, RGB_BLACK
@@ -138,8 +137,6 @@ scr_seq_T30R0601_001:
 	WaitFade
 	Compare VAR_SPECIAL_RESULT, 255
 	GoToIfEq _022D
-	TakeItem ITEM_HEART_SCALE, 1, VAR_SPECIAL_RESULT
-	BufferPlayersName 3
 	NPCMsg msg_0635_T30R0601_00025
 	WaitButton
 	CloseMsg
@@ -162,11 +159,8 @@ _022D:
 
 _0238:
 	NPCMsg msg_0635_T30R0601_00009
-	WaitButton
-	CloseMsg
-	ReleaseAll
 	SetFlag FLAG_MET_MOVE_MANIAC
-	End
+	GoTo _MoveManiacTeach
 
 _0247:
 	NPCMsg msg_0635_T30R0601_00015

@@ -298,3 +298,6 @@
 .public PartyGauge_StartHideTask
 .public PartyGauge_IsHideTaskFinished
 .public PartyGauge_DeleteAndFreeResources
+.public QuickIntro_GetIntroDelay
+.public QuickIntro_OffsetPositionXY
+.public QuickIntro_ScrollTrainerBg

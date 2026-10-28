@@ -91,6 +91,7 @@ struct SaveSlotCheck {
 
 SaveData *SaveData_New(void);
 SaveData *SaveData_Get(void);
+SaveData *SaveData_GetOrNull(void);
 void *SaveArray_Get(SaveData *saveData, int id);
 const void *SaveArray_Const_Get(const SaveData *saveData, int id);
 BOOL Save_DeleteAllData(SaveData *saveData);

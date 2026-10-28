@@ -10,7 +10,7 @@
 // Shiny odds (1 in N). Change these to retune the whole game.
 #define SHINY_ODDS_BASE    4096 // wild (all encounter types), static/legendary encounters
 #define SHINY_ODDS_STARTER 4096 // Chikorita / Cyndaquil / Totodile
-#define SHINY_ODDS_GIFT    512  // script gifts (GiveMon) and gift eggs
+#define SHINY_ODDS_GIFT    4096  // script gifts (GiveMon) and gift eggs
 #define SHINY_ODDS_EGG     512  // daycare eggs, regardless of parent languages
 #define SHINY_ODDS_ROAMER  100  // Raikou, Entei, Latios, Latias
 
