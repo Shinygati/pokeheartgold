@@ -1235,7 +1235,9 @@ BOOL BtlCmd_CalcExpGain(BattleSystem *battleSystem, BattleContext *ctx) {
         Pokemon *mon;
         for (int i = 0; i < Party_GetCount(BattleSystem_GetParty(battleSystem, 0)); i++) {
             mon = BattleSystem_GetPartyMon(battleSystem, 0, i);
-            if (GetMonData(mon, MON_DATA_SPECIES, 0) && GetMonData(mon, MON_DATA_HP, 0)) {
+            if (GetMonData(mon, MON_DATA_SPECIES, 0)
+                && GetMonData(mon, MON_DATA_HP, 0)
+                && !GetMonData(mon, MON_DATA_IS_EGG, 0)) { // eggs have HP but must never get exp
                 if (ctx->unk_A4[(ctx->battlerIdFainted >> 1) & 1] & MaskOfFlagNo(i)) {
                     expMonsCnt++;
                 }
@@ -6013,7 +6015,10 @@ static void Task_GetExp(SysTask *task, void *inData) {
         itemEffect = GetItemAttr(item, ITEM_VAR_HOLD_EFFECT, HEAP_ID_BATTLE);
 
         // Exp. Share is always active, so any healthy mon is eligible
-        if ((GetMonData(mon, MON_DATA_SPECIES, NULL) && GetMonData(mon, MON_DATA_HP, NULL)) || (data->ctx->unk_A4[side] & MaskOfFlagNo(slot))) {
+        if ((GetMonData(mon, MON_DATA_SPECIES, NULL)
+                && GetMonData(mon, MON_DATA_HP, NULL)
+                && !GetMonData(mon, MON_DATA_IS_EGG, NULL))
+            || (data->ctx->unk_A4[side] & MaskOfFlagNo(slot))) {
             break;
         }
     }
@@ -6047,7 +6052,9 @@ static void Task_GetExp(SysTask *task, void *inData) {
         // "{0} gained {1} Exp. Points!"
         msg.id = msg_0197_00001;
 
-        if (GetMonData(mon, MON_DATA_HP, NULL) && GetMonData(mon, MON_DATA_LEVEL, NULL) != 100) {
+        if (GetMonData(mon, MON_DATA_HP, NULL)
+            && !GetMonData(mon, MON_DATA_IS_EGG, NULL)
+            && GetMonData(mon, MON_DATA_LEVEL, NULL) != 100) {
             if (data->ctx->unk_A4[side] & MaskOfFlagNo(slot)) {
                 totalExp = data->ctx->gainedExp;
             }
